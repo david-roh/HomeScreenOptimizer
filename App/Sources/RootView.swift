@@ -12,6 +12,14 @@ struct RootView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if !model.statusMessage.isEmpty {
+                    Section {
+                        Label(model.statusMessage, systemImage: model.statusLevel.iconName)
+                            .font(.footnote)
+                            .foregroundStyle(model.statusLevel.tint)
+                    }
+                }
+
                 onboardingSection
                 profileListSection
                 importSection
@@ -30,17 +38,14 @@ struct RootView: View {
                     selectedItem = nil
                 }
             }
-            .alert("Status", isPresented: $model.showingStatus) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(model.statusMessage)
-            }
         }
     }
 
     private var onboardingSection: some View {
         Section("Onboarding") {
             TextField("Profile name", text: $model.profileName)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled()
 
             Picker("Context", selection: $model.context) {
                 ForEach(ProfileContext.allCases, id: \.self) { context in
@@ -70,6 +75,7 @@ struct RootView: View {
             Button("Save Profile") {
                 model.saveProfile()
             }
+            .disabled(!model.canSubmitProfile)
         }
     }
 
@@ -120,6 +126,23 @@ struct RootView: View {
                                 .lineLimit(1)
                         }
                         Spacer()
+
+                        Button {
+                            model.movePageUp(pageID: page.id)
+                        } label: {
+                            Image(systemName: "chevron.up")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(!model.canMovePageUp(pageID: page.id))
+
+                        Button {
+                            model.movePageDown(pageID: page.id)
+                        } label: {
+                            Image(systemName: "chevron.down")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(!model.canMovePageDown(pageID: page.id))
+
                         Button("Delete", role: .destructive) {
                             model.removePage(pageID: page.id)
                         }
@@ -166,7 +189,7 @@ final class RootViewModel: ObservableObject {
     @Published var savedProfiles: [Profile] = []
     @Published var importSession: ScreenshotImportSession?
     @Published var statusMessage = ""
-    @Published var showingStatus = false
+    @Published var statusLevel: StatusLevel = .info
 
     private let profileBuilder = OnboardingProfileBuilder()
     private let profileRepository: FileProfileRepository
@@ -185,15 +208,24 @@ final class RootViewModel: ObservableObject {
         importCoordinator = ScreenshotImportCoordinator(repository: importRepository)
     }
 
+    var canSubmitProfile: Bool {
+        (utilityWeight + flowWeight + aestheticsWeight + moveCostWeight) > 0.0001
+    }
+
     func loadProfiles() {
         do {
             savedProfiles = try profileRepository.fetchAll()
         } catch {
-            showStatus("Failed to load profiles: \(error.localizedDescription)")
+            showStatus("Failed to load profiles: \(error.localizedDescription)", level: .error)
         }
     }
 
     func saveProfile() {
+        guard canSubmitProfile else {
+            showStatus("Set at least one weight above zero before saving.", level: .error)
+            return
+        }
+
         let answers = OnboardingAnswers(
             preferredName: profileName,
             context: context,
@@ -212,38 +244,38 @@ final class RootViewModel: ObservableObject {
         do {
             try profileRepository.upsert(profile)
             loadProfiles()
-            showStatus("Saved profile \"\(profile.name)\".")
+            showStatus("Saved profile \"\(profile.name)\".", level: .success)
         } catch {
-            showStatus("Failed to save profile: \(error.localizedDescription)")
+            showStatus("Failed to save profile: \(error.localizedDescription)", level: .error)
         }
     }
 
     func startOrResetSession() {
         do {
             importSession = try importCoordinator.startSession()
-            showStatus("Import session ready.")
+            showStatus("Import session ready.", level: .success)
         } catch {
-            showStatus("Failed to create session: \(error.localizedDescription)")
+            showStatus("Failed to create session: \(error.localizedDescription)", level: .error)
         }
     }
 
     func handlePickedItem(_ item: PhotosPickerItem) async {
         guard let session = importSession else {
-            showStatus("Start an import session first.")
+            showStatus("Start an import session first.", level: .error)
             return
         }
 
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {
-                showStatus("Could not read selected image.")
+                showStatus("Could not read selected image.", level: .error)
                 return
             }
 
             let fileURL = try writeImageToTemporaryFile(data: data)
             importSession = try importCoordinator.addPage(sessionID: session.id, filePath: fileURL.path)
-            showStatus("Screenshot added.")
+            showStatus("Screenshot added.", level: .success)
         } catch {
-            showStatus("Failed to add screenshot: \(error.localizedDescription)")
+            showStatus("Failed to add screenshot: \(error.localizedDescription)", level: .error)
         }
     }
 
@@ -254,10 +286,34 @@ final class RootViewModel: ObservableObject {
 
         do {
             importSession = try importCoordinator.removePage(sessionID: session.id, pageID: pageID)
-            showStatus("Removed screenshot.")
+            showStatus("Removed screenshot.", level: .success)
         } catch {
-            showStatus("Failed to remove screenshot: \(error.localizedDescription)")
+            showStatus("Failed to remove screenshot: \(error.localizedDescription)", level: .error)
         }
+    }
+
+    func canMovePageUp(pageID: UUID) -> Bool {
+        guard let index = indexForPage(id: pageID) else {
+            return false
+        }
+
+        return index > 0
+    }
+
+    func canMovePageDown(pageID: UUID) -> Bool {
+        guard let session = importSession, let index = indexForPage(id: pageID) else {
+            return false
+        }
+
+        return index < session.pages.count - 1
+    }
+
+    func movePageUp(pageID: UUID) {
+        movePage(pageID: pageID, offset: -1)
+    }
+
+    func movePageDown(pageID: UUID) {
+        movePage(pageID: pageID, offset: 1)
     }
 
     private func writeImageToTemporaryFile(data: Data) throws -> URL {
@@ -269,9 +325,63 @@ final class RootViewModel: ObservableObject {
         return fileURL
     }
 
-    private func showStatus(_ message: String) {
+    private func movePage(pageID: UUID, offset: Int) {
+        guard let session = importSession, let index = indexForPage(id: pageID) else {
+            return
+        }
+
+        let destination = index + offset
+        guard session.pages.indices.contains(destination) else {
+            return
+        }
+
+        do {
+            importSession = try importCoordinator.reorderPages(
+                sessionID: session.id,
+                fromIndex: index,
+                toIndex: destination
+            )
+            showStatus("Reordered import pages.", level: .success)
+        } catch {
+            showStatus("Failed to reorder pages: \(error.localizedDescription)", level: .error)
+        }
+    }
+
+    private func indexForPage(id: UUID) -> Int? {
+        importSession?.pages.firstIndex { $0.id == id }
+    }
+
+    private func showStatus(_ message: String, level: StatusLevel = .info) {
         statusMessage = message
-        showingStatus = true
+        statusLevel = level
+    }
+}
+
+enum StatusLevel {
+    case info
+    case success
+    case error
+
+    var tint: Color {
+        switch self {
+        case .info:
+            return .blue
+        case .success:
+            return .green
+        case .error:
+            return .red
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .info:
+            return "info.circle.fill"
+        case .success:
+            return "checkmark.circle.fill"
+        case .error:
+            return "exclamationmark.triangle.fill"
+        }
     }
 }
 
