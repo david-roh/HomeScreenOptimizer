@@ -116,6 +116,30 @@ struct RootView: View {
                     Label("Add Screenshot", systemImage: "photo")
                 }
 
+                Button("Analyze Latest Screenshot (OCR)") {
+                    Task {
+                        await model.analyzeLatestScreenshot()
+                    }
+                }
+                .disabled(session.pages.isEmpty)
+
+                if !model.ocrCandidates.isEmpty {
+                    Text("OCR quality: \(model.ocrQuality.displayTitle)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(Array(model.ocrCandidates.prefix(8).enumerated()), id: \.offset) { _, candidate in
+                        HStack {
+                            Text(candidate.text)
+                            Spacer()
+                            Text(String(format: "%.2f", candidate.confidence))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+
                 ForEach(session.pages) { page in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -190,12 +214,18 @@ final class RootViewModel: ObservableObject {
     @Published var importSession: ScreenshotImportSession?
     @Published var statusMessage = ""
     @Published var statusLevel: StatusLevel = .info
+    @Published var ocrCandidates: [OCRLabelCandidate] = []
+    @Published var ocrQuality: ImportQuality = .low
 
     private let profileBuilder = OnboardingProfileBuilder()
     private let profileRepository: FileProfileRepository
     private let importCoordinator: ScreenshotImportCoordinator
+    private let ocrExtractor: any LayoutOCRExtracting
+    private let ocrPostProcessor = OCRPostProcessor()
 
-    init() {
+    init(ocrExtractor: any LayoutOCRExtracting = VisionLayoutOCRExtractor()) {
+        self.ocrExtractor = ocrExtractor
+
         let baseURL: URL
         if let appData = try? AppDirectories.dataDirectory() {
             baseURL = appData
@@ -253,6 +283,8 @@ final class RootViewModel: ObservableObject {
     func startOrResetSession() {
         do {
             importSession = try importCoordinator.startSession()
+            ocrCandidates = []
+            ocrQuality = .low
             showStatus("Import session ready.", level: .success)
         } catch {
             showStatus("Failed to create session: \(error.localizedDescription)", level: .error)
@@ -286,6 +318,8 @@ final class RootViewModel: ObservableObject {
 
         do {
             importSession = try importCoordinator.removePage(sessionID: session.id, pageID: pageID)
+            ocrCandidates = []
+            ocrQuality = .low
             showStatus("Removed screenshot.", level: .success)
         } catch {
             showStatus("Failed to remove screenshot: \(error.localizedDescription)", level: .error)
@@ -314,6 +348,27 @@ final class RootViewModel: ObservableObject {
 
     func movePageDown(pageID: UUID) {
         movePage(pageID: pageID, offset: 1)
+    }
+
+    func analyzeLatestScreenshot() async {
+        guard let latestPage = importSession?.pages.last else {
+            showStatus("Add a screenshot before running OCR.", level: .error)
+            return
+        }
+
+        do {
+            let extracted = try await ocrExtractor.extractAppLabels(from: latestPage.filePath)
+            ocrCandidates = extracted
+            ocrQuality = ocrPostProcessor.estimateImportQuality(from: extracted)
+
+            if extracted.isEmpty {
+                showStatus("No likely app labels detected.", level: .info)
+            } else {
+                showStatus("Extracted \(extracted.count) app label candidates.", level: .success)
+            }
+        } catch {
+            showStatus("OCR failed: \(error.localizedDescription)", level: .error)
+        }
     }
 
     private func writeImageToTemporaryFile(data: Data) throws -> URL {
@@ -418,6 +473,19 @@ private extension GripMode {
             return "One-Hand"
         case .twoHand:
             return "Two-Hand"
+        }
+    }
+}
+
+private extension ImportQuality {
+    var displayTitle: String {
+        switch self {
+        case .high:
+            return "High"
+        case .medium:
+            return "Medium"
+        case .low:
+            return "Low"
         }
     }
 }
