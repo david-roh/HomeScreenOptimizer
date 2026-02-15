@@ -1,0 +1,77 @@
+name: HomeScreenOptimizerApp
+options:
+  bundleIdPrefix: com.davidroh
+  deploymentTarget:
+    iOS: "17.0"
+configs:
+  Debug: debug
+  Release: release
+packages:
+  HomeScreenOptimizer:
+    path: .
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+    DEVELOPMENT_TEAM: ""
+targets:
+  HomeScreenOptimizeriOS:
+    type: application
+    platform: iOS
+    sources:
+      - App/Sources
+    info:
+      path: App/Info.plist
+      properties:
+        UILaunchScreen:
+          UIColorName: ""
+          UIImageName: ""
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.davidroh.homescreenoptimizer
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 1.0
+        INFOPLIST_KEY_CFBundleDisplayName: HomeScreenOptimizer
+        GENERATE_INFOPLIST_FILE: false
+        TARGETED_DEVICE_FAMILY: "1,2"
+    dependencies:
+      - package: HomeScreenOptimizer
+        product: Core
+      - package: HomeScreenOptimizer
+        product: Ingestion
+      - package: HomeScreenOptimizer
+        product: Profiles
+      - package: HomeScreenOptimizer
+        product: Usage
+      - package: HomeScreenOptimizer
+        product: Optimizer
+      - package: HomeScreenOptimizer
+        product: Guide
+      - package: HomeScreenOptimizer
+        product: Simulation
+      - package: HomeScreenOptimizer
+        product: Privacy
+
+  HomeScreenOptimizeriOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    hostApplication: HomeScreenOptimizeriOS
+    sources:
+      - App/Tests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+    dependencies:
+      - target: HomeScreenOptimizeriOS
+
+schemes:
+  HomeScreenOptimizeriOS:
+    build:
+      targets:
+        HomeScreenOptimizeriOS: all
+    test:
+      targets:
+        - HomeScreenOptimizeriOSTests
+    run:
+      config: Debug
