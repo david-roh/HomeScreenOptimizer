@@ -3,6 +3,7 @@ import Foundation
 public protocol ScreenshotImportSessionRepository: Sendable {
     func upsert(_ session: ScreenshotImportSession) throws
     func fetch(id: UUID) throws -> ScreenshotImportSession?
+    func fetchAll() throws -> [ScreenshotImportSession]
     func delete(id: UUID) throws
 }
 
@@ -26,6 +27,10 @@ public final class FileScreenshotImportSessionRepository: ScreenshotImportSessio
 
     public func fetch(id: UUID) throws -> ScreenshotImportSession? {
         try loadAll()[id]
+    }
+
+    public func fetchAll() throws -> [ScreenshotImportSession] {
+        Array(try loadAll().values)
     }
 
     public func delete(id: UUID) throws {

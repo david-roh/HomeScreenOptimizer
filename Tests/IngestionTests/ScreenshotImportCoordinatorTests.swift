@@ -28,4 +28,24 @@ final class ScreenshotImportCoordinatorTests: XCTestCase {
         let resumed = try coordinator.resumeSession(sessionID: session.id)
         XCTAssertEqual(resumed.pages.count, 1)
     }
+
+    func testLatestSessionReturnsMostRecentlyUpdatedSession() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("import-session-latest-\(UUID().uuidString).json")
+
+        let repository = FileScreenshotImportSessionRepository(fileURL: fileURL)
+        let coordinator = ScreenshotImportCoordinator(repository: repository)
+
+        let first = try coordinator.startSession()
+        _ = try coordinator.addPage(sessionID: first.id, filePath: "/tmp/a.png")
+
+        let second = try coordinator.startSession()
+        _ = try coordinator.addPage(sessionID: second.id, filePath: "/tmp/b.png")
+        _ = try coordinator.addPage(sessionID: second.id, filePath: "/tmp/c.png")
+
+        let latest = try coordinator.latestSession()
+
+        XCTAssertEqual(latest?.id, second.id)
+        XCTAssertEqual(latest?.pages.count, 2)
+    }
 }

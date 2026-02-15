@@ -236,6 +236,8 @@ final class RootViewModel: ObservableObject {
         profileRepository = FileProfileRepository(fileURL: baseURL.appendingPathComponent("profiles.json"))
         let importRepository = FileScreenshotImportSessionRepository(fileURL: baseURL.appendingPathComponent("import_sessions.json"))
         importCoordinator = ScreenshotImportCoordinator(repository: importRepository)
+
+        restoreLatestImportSession()
     }
 
     var canSubmitProfile: Bool {
@@ -368,6 +370,21 @@ final class RootViewModel: ObservableObject {
             }
         } catch {
             showStatus("OCR failed: \(error.localizedDescription)", level: .error)
+        }
+    }
+
+    func restoreLatestImportSession() {
+        do {
+            guard let latest = try importCoordinator.latestSession() else {
+                return
+            }
+
+            importSession = latest
+            if !latest.pages.isEmpty {
+                showStatus("Resumed latest import session (\(latest.pages.count) pages).", level: .info)
+            }
+        } catch {
+            showStatus("Failed to restore latest session: \(error.localizedDescription)", level: .error)
         }
     }
 

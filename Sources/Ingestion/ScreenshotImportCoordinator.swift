@@ -56,6 +56,12 @@ public final class ScreenshotImportCoordinator {
         try currentSession(id: sessionID)
     }
 
+    public func latestSession() throws -> ScreenshotImportSession? {
+        try repository.fetchAll().max { lhs, rhs in
+            lhs.updatedAt < rhs.updatedAt
+        }
+    }
+
     private func currentSession(id: UUID) throws -> ScreenshotImportSession {
         guard let session = try repository.fetch(id: id) else {
             throw ScreenshotImportError.sessionNotFound
