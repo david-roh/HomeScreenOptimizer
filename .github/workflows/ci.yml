@@ -56,7 +56,7 @@ jobs:
           fi
           DEST_JSON="$(
             xcodebuild -project HomeScreenOptimizerApp.xcodeproj -scheme HomeScreenOptimizeriOS -showdestinations -json 2>/dev/null \
-              | awk 'BEGIN { emit = 0 } /^[[:space:]]*[\[{]/ { emit = 1 } emit { print }'
+              | awk 'BEGIN { emit = 0 } { if (!emit && ($0 ~ /^[[:space:]]*\\{/ || $0 ~ /^[[:space:]]*\\[[[:space:]]*\\{/)) emit = 1; if (emit) print }'
           )"
           if [[ -z "${DEST_JSON}" ]]; then
             echo "xcodebuild did not return destination JSON."
