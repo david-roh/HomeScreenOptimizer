@@ -58,7 +58,15 @@ public final class ScreenshotImportCoordinator {
 
     public func latestSession() throws -> ScreenshotImportSession? {
         try repository.fetchAll().max { lhs, rhs in
-            lhs.updatedAt < rhs.updatedAt
+            if lhs.updatedAt != rhs.updatedAt {
+                return lhs.updatedAt < rhs.updatedAt
+            }
+
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt < rhs.createdAt
+            }
+
+            return lhs.id.uuidString < rhs.id.uuidString
         }
     }
 

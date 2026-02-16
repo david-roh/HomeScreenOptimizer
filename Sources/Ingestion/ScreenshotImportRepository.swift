@@ -1,3 +1,4 @@
+import Core
 import Foundation
 
 public protocol ScreenshotImportSessionRepository: Sendable {
@@ -14,8 +15,8 @@ public final class FileScreenshotImportSessionRepository: ScreenshotImportSessio
 
     public init(fileURL: URL) {
         self.fileURL = fileURL
-        decoder.dateDecodingStrategy = .iso8601
-        encoder.dateEncodingStrategy = .iso8601
+        ISO8601DateCoding.configure(decoder)
+        ISO8601DateCoding.configure(encoder)
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     }
 

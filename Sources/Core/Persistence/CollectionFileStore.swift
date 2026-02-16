@@ -12,10 +12,10 @@ public final class CollectionFileStore<Element: Identifiable & Codable & Sendabl
         self.migrationDecoder = migrationDecoder
 
         decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        ISO8601DateCoding.configure(decoder)
 
         encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        ISO8601DateCoding.configure(encoder)
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     }
 
