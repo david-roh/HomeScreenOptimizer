@@ -13,15 +13,20 @@
 		6052741A5F7832968EFA97A1 /* Profiles in Frameworks */ = {isa = PBXBuildFile; productRef = 069A9C72A2AE77037651510A /* Profiles */; };
 		648B229EE38ED02741CC3C15 /* HomeScreenOptimizeriOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D21AF8BA2185F422EC33CC82 /* HomeScreenOptimizeriOSApp.swift */; };
 		6788761FDECB305533CFAC03 /* NativeScreenTimeSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94CCACE4176CCECFEF0E719D /* NativeScreenTimeSmokeTests.swift */; };
+		6F73FCBCC7E2460E78CB1216 /* MappingOverlayEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6E3EDCF6323252C0D9833FD /* MappingOverlayEditorView.swift */; };
 		729426D8D3CC7C7BC70A2880 /* Simulation in Frameworks */ = {isa = PBXBuildFile; productRef = 9BE6D6B76CC3349901C618BD /* Simulation */; };
 		7C9BA7747C8D4EEAB4ED0E6F /* Guide in Frameworks */ = {isa = PBXBuildFile; productRef = 6858C5D5DFA330EFE748AE53 /* Guide */; };
 		80C0C96CFD2B928B352FB95D /* UsageSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64E5071554F7DD14AE9678A /* UsageSummaryView.swift */; };
+		87C1DCBC5D7E9172B5650F0A /* HomeScreenLayoutPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29813C0967DBCA126373AC7D /* HomeScreenLayoutPreviewView.swift */; };
 		98EBBF8BCA99A6BA0E834309 /* UsageSummaryReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD590DAB09D42FC5F672B9E /* UsageSummaryReport.swift */; };
 		9BDE9F654E743BA354A26D63 /* HomeScreenUsageReportExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD53427F6FB7CB3E3FF4E4E0 /* HomeScreenUsageReportExtension.swift */; };
+		AF748337B410572330AE0901 /* GuidedFlowSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B38A2B44B9E2407FC36AC7D4 /* GuidedFlowSmokeTests.swift */; };
 		B135114CA54CB6010B4EF35E /* Core in Frameworks */ = {isa = PBXBuildFile; productRef = 197321D8BEFC80F109D113E2 /* Core */; };
 		BF0F01A88DD482513CC1A2D7 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB18E163BDDECDA4126B81A5 /* RootView.swift */; };
 		CB36C858316F96BA23254FEC /* RootViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0D6D9D1C2B010F43786E5D /* RootViewModelTests.swift */; };
 		D47CF2204CFE593E1C4E7639 /* HomeScreenOptimizeriOSTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA5A3705EEE7A1967AF7E00 /* HomeScreenOptimizeriOSTests.swift */; };
+		D6EABA555A7D22F8B48F48AF /* GuidedFlowModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05B0F8CF86A6FCF2B808E9A6 /* GuidedFlowModels.swift */; };
+		DEDCFF637131DCEAB9CDABEF /* GuidedFlowModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42877D4B5EE764CDCF2D5940 /* GuidedFlowModelsTests.swift */; };
 		E26889F0F0CE9E71CB009CBB /* Ingestion in Frameworks */ = {isa = PBXBuildFile; productRef = 95381A1ACBEDB3D8BAA16F1D /* Ingestion */; };
 		E668CBE5A6D1D4AB7251D508 /* Usage in Frameworks */ = {isa = PBXBuildFile; productRef = B3DCFBE7E5989913326E4742 /* Usage */; };
 		FA82762DD7BD0703FE0B6079 /* Optimizer in Frameworks */ = {isa = PBXBuildFile; productRef = 85826957B3729DB98F214ABB /* Optimizer */; };
@@ -67,6 +72,9 @@
 
 /* Begin PBXFileReference section */
 		039FFCBB6673BA11598A2055 /* HomeScreenOptimizeriOSUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HomeScreenOptimizeriOSUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		05B0F8CF86A6FCF2B808E9A6 /* GuidedFlowModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuidedFlowModels.swift; sourceTree = "<group>"; };
+		29813C0967DBCA126373AC7D /* HomeScreenLayoutPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreenLayoutPreviewView.swift; sourceTree = "<group>"; };
+		42877D4B5EE764CDCF2D5940 /* GuidedFlowModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuidedFlowModelsTests.swift; sourceTree = "<group>"; };
 		451B20FB6C3E7AF19B14A06A /* HomeScreenUsageReportExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HomeScreenUsageReportExtension.entitlements; sourceTree = "<group>"; };
 		69CC611867AAEBF47EB5603B /* HomeScreenOptimizeriOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HomeScreenOptimizeriOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7305AF2F30DDF10053FD5D1F /* HomeScreenOptimizeriOSTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HomeScreenOptimizeriOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -76,10 +84,12 @@
 		969424125D6FA48324FA7872 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A64E5071554F7DD14AE9678A /* UsageSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSummaryView.swift; sourceTree = "<group>"; };
 		A7F676E9B101BDFFFEF65EC0 /* New project */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "New project"; path = .; sourceTree = SOURCE_ROOT; };
+		B38A2B44B9E2407FC36AC7D4 /* GuidedFlowSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuidedFlowSmokeTests.swift; sourceTree = "<group>"; };
 		BAD590DAB09D42FC5F672B9E /* UsageSummaryReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSummaryReport.swift; sourceTree = "<group>"; };
 		CD53427F6FB7CB3E3FF4E4E0 /* HomeScreenUsageReportExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreenUsageReportExtension.swift; sourceTree = "<group>"; };
 		D21AF8BA2185F422EC33CC82 /* HomeScreenOptimizeriOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreenOptimizeriOSApp.swift; sourceTree = "<group>"; };
 		DC0D6D9D1C2B010F43786E5D /* RootViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootViewModelTests.swift; sourceTree = "<group>"; };
+		E6E3EDCF6323252C0D9833FD /* MappingOverlayEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MappingOverlayEditorView.swift; sourceTree = "<group>"; };
 		EB18E163BDDECDA4126B81A5 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -113,6 +123,7 @@
 		66918CEECD822A526799A778 /* UITests */ = {
 			isa = PBXGroup;
 			children = (
+				B38A2B44B9E2407FC36AC7D4 /* GuidedFlowSmokeTests.swift */,
 				94CCACE4176CCECFEF0E719D /* NativeScreenTimeSmokeTests.swift */,
 			);
 			name = UITests;
@@ -122,6 +133,7 @@
 		677043C29E704E0DEF96D9EC /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				42877D4B5EE764CDCF2D5940 /* GuidedFlowModelsTests.swift */,
 				8CA5A3705EEE7A1967AF7E00 /* HomeScreenOptimizeriOSTests.swift */,
 				DC0D6D9D1C2B010F43786E5D /* RootViewModelTests.swift */,
 			);
@@ -132,7 +144,10 @@
 		6DF082BC390CB45E5568B5F5 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				05B0F8CF86A6FCF2B808E9A6 /* GuidedFlowModels.swift */,
+				29813C0967DBCA126373AC7D /* HomeScreenLayoutPreviewView.swift */,
 				D21AF8BA2185F422EC33CC82 /* HomeScreenOptimizeriOSApp.swift */,
+				E6E3EDCF6323252C0D9833FD /* MappingOverlayEditorView.swift */,
 				EB18E163BDDECDA4126B81A5 /* RootView.swift */,
 			);
 			name = Sources;
@@ -333,7 +348,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D6EABA555A7D22F8B48F48AF /* GuidedFlowModels.swift in Sources */,
+				87C1DCBC5D7E9172B5650F0A /* HomeScreenLayoutPreviewView.swift in Sources */,
 				648B229EE38ED02741CC3C15 /* HomeScreenOptimizeriOSApp.swift in Sources */,
+				6F73FCBCC7E2460E78CB1216 /* MappingOverlayEditorView.swift in Sources */,
 				BF0F01A88DD482513CC1A2D7 /* RootView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -342,6 +360,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DEDCFF637131DCEAB9CDABEF /* GuidedFlowModelsTests.swift in Sources */,
 				D47CF2204CFE593E1C4E7639 /* HomeScreenOptimizeriOSTests.swift in Sources */,
 				CB36C858316F96BA23254FEC /* RootViewModelTests.swift in Sources */,
 			);
@@ -351,6 +370,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AF748337B410572330AE0901 /* GuidedFlowSmokeTests.swift in Sources */,
 				6788761FDECB305533CFAC03 /* NativeScreenTimeSmokeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

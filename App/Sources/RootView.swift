@@ -53,12 +53,13 @@ struct RootView: View {
     @State private var selectedUsageItem: PhotosPickerItem?
     @State private var selectedTab: Tab = .setup
     @State private var selectedPreset: OptimizationPreset = .balanced
-    @State private var customContextFocus: CustomContextFocus = .balanced
     @State private var selectedVisualPattern: VisualPatternMode = .colorBands
+    @State private var ignoreContextBaselineOnce = false
     @State private var showTuneSheet = false
     @State private var showManualUsageEditor = false
     @State private var showMappingEditor = false
     @State private var showStyleDetailSheet = false
+    @State private var showFinalLayoutPreview = false
     @State private var showPageList = false
     @State private var showLayoutPreview = false
     @State private var showAllMoves = false
@@ -138,156 +139,7 @@ struct RootView: View {
         }
     }
 
-    private enum OptimizationPreset: String, CaseIterable, Identifiable {
-        case balanced
-        case reachFirst
-        case visualHarmony
-        case minimalDisruption
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .balanced:
-                return "Balanced"
-            case .reachFirst:
-                return "Reach"
-            case .visualHarmony:
-                return "Visual"
-            case .minimalDisruption:
-                return "Stable"
-            }
-        }
-
-        var shortDescription: String {
-            switch self {
-            case .balanced:
-                return "General purpose"
-            case .reachFirst:
-                return "Fast thumb access"
-            case .visualHarmony:
-                return "Pattern-first layout"
-            case .minimalDisruption:
-                return "Minimal movement"
-            }
-        }
-
-        var iconName: String {
-            switch self {
-            case .balanced:
-                return "square.grid.2x2"
-            case .reachFirst:
-                return "hand.tap"
-            case .visualHarmony:
-                return "paintpalette"
-            case .minimalDisruption:
-                return "lock.shield"
-            }
-        }
-
-        var bestFor: String {
-            switch self {
-            case .balanced:
-                return "mixed priorities and daily reliability"
-            case .reachFirst:
-                return "one-hand speed and reduced thumb stretch"
-            case .visualHarmony:
-                return "color/pattern consistency with acceptable movement"
-            case .minimalDisruption:
-                return "small edits to an already familiar layout"
-            }
-        }
-
-        var tradeoff: String {
-            switch self {
-            case .balanced:
-                return "does not maximize any single metric"
-            case .reachFirst:
-                return "can move more icons than stable mode"
-            case .visualHarmony:
-                return "may place lower-usage apps in premium spots"
-            case .minimalDisruption:
-                return "can leave high-usage apps in harder zones"
-            }
-        }
-
-        var engineDescription: String {
-            switch self {
-            case .balanced:
-                return "Uses all four signals with moderate weights so recommendations stay practical."
-            case .reachFirst:
-                return "Pushes high-usage apps toward your highest-reach zones, accepting moderate movement."
-            case .visualHarmony:
-                return "Boosts aesthetic score, then applies a visual-pattern pass across the final grid."
-            case .minimalDisruption:
-                return "Strongly penalizes moves so the optimizer keeps your current layout mostly intact."
-            }
-        }
-
-        var weights: GoalWeights {
-            switch self {
-            case .balanced:
-                return GoalWeights(utility: 0.45, flow: 0.20, aesthetics: 0.20, moveCost: 0.15)
-            case .reachFirst:
-                return GoalWeights(utility: 0.58, flow: 0.18, aesthetics: 0.09, moveCost: 0.15)
-            case .visualHarmony:
-                return GoalWeights(utility: 0.24, flow: 0.20, aesthetics: 0.46, moveCost: 0.10)
-            case .minimalDisruption:
-                return GoalWeights(utility: 0.28, flow: 0.14, aesthetics: 0.08, moveCost: 0.50)
-            }
-        }
-
-        static func nearest(to weights: GoalWeights) -> OptimizationPreset {
-            let candidates = OptimizationPreset.allCases
-            return candidates.min { lhs, rhs in
-                lhs.distance(to: weights) < rhs.distance(to: weights)
-            } ?? .balanced
-        }
-
-        private func distance(to other: GoalWeights) -> Double {
-            let w = weights
-            let utility = (w.utility - other.utility) * (w.utility - other.utility)
-            let flow = (w.flow - other.flow) * (w.flow - other.flow)
-            let aesthetics = (w.aesthetics - other.aesthetics) * (w.aesthetics - other.aesthetics)
-            let moveCost = (w.moveCost - other.moveCost) * (w.moveCost - other.moveCost)
-            return utility + flow + aesthetics + moveCost
-        }
-    }
-
-    private enum CustomContextFocus: String, CaseIterable, Identifiable {
-        case speed
-        case visual
-        case stability
-        case balanced
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .speed:
-                return "Speed"
-            case .visual:
-                return "Visual"
-            case .stability:
-                return "Stability"
-            case .balanced:
-                return "Balanced"
-            }
-        }
-
-        var preset: OptimizationPreset {
-            switch self {
-            case .speed:
-                return .reachFirst
-            case .visual:
-                return .visualHarmony
-            case .stability:
-                return .minimalDisruption
-            case .balanced:
-                return .balanced
-            }
-        }
-    }
+    private typealias OptimizationPreset = OptimizationIntent
 
     private struct TutorialCard: Identifiable {
         let id = UUID()
@@ -298,7 +150,7 @@ struct RootView: View {
 
     private var tutorialCards: [TutorialCard] {
         [
-            TutorialCard(icon: "figure.wave", title: "Set up once", body: "Pick hand/grip and choose a style preset."),
+            TutorialCard(icon: "figure.wave", title: "Set up once", body: "Pick hand/grip and choose intent."),
             TutorialCard(icon: "photo.stack", title: "Import quickly", body: "Add screenshots, then auto-analyze."),
             TutorialCard(icon: "checkmark.circle", title: "Follow steps", body: "Generate and apply one move at a time.")
         ]
@@ -360,8 +212,14 @@ struct RootView: View {
         .sheet(isPresented: $showStyleDetailSheet) {
             styleDetailSheet
         }
+        .sheet(isPresented: $showFinalLayoutPreview) {
+            HomeScreenLayoutPreviewView(model: model)
+        }
         .onAppear {
             model.loadProfiles()
+            if model.savedProfiles.isEmpty {
+                model.applyContextBaseline(for: model.context)
+            }
             syncPresetFromModelWeights()
             model.visualPatternMode = selectedVisualPattern
             model.visualModeEnabled = selectedPreset == .visualHarmony
@@ -378,6 +236,15 @@ struct RootView: View {
         }
         .onChange(of: selectedVisualPattern) { _, pattern in
             model.visualPatternMode = pattern
+        }
+        .onChange(of: model.context) { _, newContext in
+            if ignoreContextBaselineOnce {
+                ignoreContextBaselineOnce = false
+                return
+            }
+
+            model.applyContextBaseline(for: newContext)
+            syncPresetFromModelWeights()
         }
         .onChange(of: model.selectedProfileID) { _, _ in
             model.handleProfileSelectionChange()
@@ -572,15 +439,36 @@ struct RootView: View {
     private var setupCard: some View {
         card(title: "Profile") {
             if !model.savedProfiles.isEmpty {
-                HStack {
-                    Picker("Profile", selection: $model.selectedProfileID) {
+                HStack(spacing: 10) {
+                    Menu {
                         ForEach(model.savedProfiles) { profile in
-                            Text(profile.name).tag(Optional(profile.id))
+                            Button {
+                                model.selectedProfileID = profile.id
+                            } label: {
+                                Text(profile.name)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
                         }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.crop.circle")
+                                .foregroundStyle(.secondary)
+                            Text(model.activeProfileName ?? "Select profile")
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 9)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-                    .pickerStyle(.menu)
 
                     Button("Load") {
+                        ignoreContextBaselineOnce = true
                         model.loadSelectedProfileIntoEditor()
                         syncPresetFromModelWeights()
                     }
@@ -599,25 +487,15 @@ struct RootView: View {
                 }
             }
 
+            Text(contextBehaviorHint(for: model.context))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
             if model.context == .custom {
                 TextField("Custom context label (e.g. Commute)", text: $model.customContextLabel)
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled()
                     .textFieldStyle(.roundedBorder)
-
-                Picker("Custom focus", selection: $customContextFocus) {
-                    ForEach(CustomContextFocus.allCases) { focus in
-                        Text(focus.title).tag(focus)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: customContextFocus) { _, focus in
-                    applyPreset(focus.preset)
-                }
-
-                Text("Custom focus preloads weights so this profile behaves the way you expect.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
 
             pickerRow(title: "Hand", icon: "hand.point.up.left", selection: $model.handedness) {
@@ -633,7 +511,7 @@ struct RootView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Optimization Style")
+                Text("Intent")
                     .font(.subheadline.weight(.semibold))
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
@@ -768,6 +646,7 @@ struct RootView: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(Tab.importData.accent)
+                            .accessibilityIdentifier("edit-mappings")
 
                             Spacer()
 
@@ -900,6 +779,17 @@ struct RootView: View {
             .tint(Tab.plan.accent)
             .disabled(!canGeneratePlan)
 
+            if !model.recommendedLayoutAssignments.isEmpty {
+                Button {
+                    showFinalLayoutPreview = true
+                } label: {
+                    Label("Preview Final Layout", systemImage: "iphone.gen3")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("preview-final-layout")
+            }
+
             if let summary = model.simulationSummary {
                 HStack(spacing: 8) {
                     metricPill(title: "Score", value: String(format: "%+.3f", summary.aggregateScoreDelta))
@@ -945,70 +835,10 @@ struct RootView: View {
     }
 
     private var mappingEditorSheet: some View {
-        NavigationStack {
-            List {
-                Section("How to use") {
-                    Text("Choose the app name, then set the exact page, row, and column where that icon appears on your screenshot.")
-                    Text("Rows are top-to-bottom, columns are left-to-right.")
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Detected apps") {
-                    ForEach(Array(model.detectedSlots.indices), id: \.self) { index in
-                        let detected = model.detectedSlots[index]
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                detectedIconPreview(for: detected)
-                                TextField("App name", text: model.bindingForDetectedAppName(index: index))
-                                    .textInputAutocapitalization(.words)
-                                    .autocorrectionDisabled()
-                            }
-
-                            HStack {
-                                Picker("Page", selection: pageBinding(for: index)) {
-                                    ForEach(0..<max(model.importSession?.pages.count ?? 1, 1), id: \.self) { page in
-                                        Text("Page \(page + 1)").tag(page)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-
-                                Picker("Row", selection: rowBinding(for: index)) {
-                                    ForEach(0..<6, id: \.self) { row in
-                                        Text("Row \(row + 1)").tag(row)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-
-                                Picker("Column", selection: columnBinding(for: index)) {
-                                    ForEach(0..<4, id: \.self) { column in
-                                        Text("Col \(column + 1)").tag(column)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                            }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-            .navigationTitle("Edit Mappings")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Reset") {
-                        model.resetDetectedSlotCorrections()
-                    }
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        showMappingEditor = false
-                    }
-                }
-            }
-        }
+        MappingOverlayEditorView(
+            model: model,
+            accent: Tab.importData.accent
+        )
     }
 
     private var manualUsageSheet: some View {
@@ -1084,6 +914,12 @@ struct RootView: View {
                         model.resetMoveProgress()
                     }
                     .buttonStyle(.bordered)
+
+                    Button("Preview") {
+                        showFinalLayoutPreview = true
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("preview-final-layout")
                 }
 
                 if let nextID = model.nextPendingMoveStepID,
@@ -1336,6 +1172,7 @@ struct RootView: View {
             Text(value)
                 .font(.caption.weight(.semibold))
                 .lineLimit(1)
+                .truncationMode(.middle)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -1398,7 +1235,7 @@ struct RootView: View {
                 Spacer()
             }
             .padding(20)
-            .navigationTitle("Style Details")
+            .navigationTitle("Intent Details")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
@@ -1493,27 +1330,6 @@ struct RootView: View {
         "Page \(slot.page + 1) • Row \(slot.row + 1) • Col \(slot.column + 1)"
     }
 
-    private func pageBinding(for index: Int) -> Binding<Int> {
-        Binding(
-            get: { model.detectedSlots.indices.contains(index) ? model.detectedSlots[index].slot.page : 0 },
-            set: { model.setDetectedSlot(index: index, page: $0) }
-        )
-    }
-
-    private func rowBinding(for index: Int) -> Binding<Int> {
-        Binding(
-            get: { model.detectedSlots.indices.contains(index) ? model.detectedSlots[index].slot.row : 0 },
-            set: { model.setDetectedSlot(index: index, row: $0) }
-        )
-    }
-
-    private func columnBinding(for index: Int) -> Binding<Int> {
-        Binding(
-            get: { model.detectedSlots.indices.contains(index) ? model.detectedSlots[index].slot.column : 0 },
-            set: { model.setDetectedSlot(index: index, column: $0) }
-        )
-    }
-
     private func applyPreset(_ preset: OptimizationPreset) {
         selectedPreset = preset
         model.visualModeEnabled = preset == .visualHarmony
@@ -1522,6 +1338,17 @@ struct RootView: View {
         model.flowWeight = weights.flow
         model.aestheticsWeight = weights.aesthetics
         model.moveCostWeight = weights.moveCost
+    }
+
+    private func contextBehaviorHint(for context: ProfileContext) -> String {
+        switch context {
+        case .workday:
+            return "Workday defaults to Reach baseline for faster one-hand access."
+        case .weekend:
+            return "Weekend defaults to Balanced baseline for mixed use."
+        case .custom:
+            return "Custom defaults to Balanced baseline; label it and refine intent below."
+        }
     }
 
     private func syncPresetFromModelWeights() {
@@ -1974,6 +1801,7 @@ final class RootViewModel: ObservableObject {
 
         restoreLatestImportSession()
         refreshNativeScreenTimeAuthorizationState()
+        seedUITestingStateIfRequested()
     }
 
     var canSubmitProfile: Bool {
@@ -2059,8 +1887,37 @@ final class RootViewModel: ObservableObject {
         appNamesByID[appID] ?? "Unknown App"
     }
 
+    func previewIconData(for appID: UUID) -> Data? {
+        let canonical = canonicalAppName(displayName(for: appID))
+        guard !canonical.isEmpty else {
+            return nil
+        }
+
+        if let slot = detectedSlots.first(where: { canonicalAppName($0.appName) == canonical })?.slot {
+            return detectedIconPreviewDataBySlot[slot]
+        }
+
+        return nil
+    }
+
     func presentStatus(_ message: String, level: StatusLevel = .info) {
         showStatus(message, level: level)
+    }
+
+    func applyContextBaseline(for context: ProfileContext) {
+        let weights: GoalWeights
+        switch context {
+        case .workday:
+            weights = OptimizationIntent.reachFirst.weights
+        case .weekend, .custom:
+            weights = OptimizationIntent.balanced.weights
+        }
+
+        utilityWeight = weights.utility
+        flowWeight = weights.flow
+        aestheticsWeight = weights.aesthetics
+        moveCostWeight = weights.moveCost
+        visualModeEnabled = false
     }
 
     func loadSelectedProfileIntoEditor() {
@@ -2154,8 +2011,10 @@ final class RootViewModel: ObservableObject {
             return
         }
 
+        let resolvedName = resolvedProfileNameForSave()
+
         let answers = OnboardingAnswers(
-            preferredName: profileName,
+            preferredName: resolvedName,
             context: context,
             handedness: handedness,
             gripMode: gripMode,
@@ -2178,6 +2037,7 @@ final class RootViewModel: ObservableObject {
             try profileRepository.upsert(profile)
             loadProfiles()
             selectedProfileID = profile.id
+            profileName = profile.name
             loadUsageSnapshotForSelectedProfile()
             showStatus("Saved profile \"\(profile.name)\".", level: .success)
         } catch {
@@ -3071,6 +2931,17 @@ final class RootViewModel: ObservableObject {
         statusLevel = level
     }
 
+    private func resolvedProfileNameForSave() -> String {
+        let resolver = ProfileNameResolver(existingNames: savedProfiles.map(\.name))
+        return resolver.resolve(
+            typedName: profileName,
+            context: context,
+            customContextLabel: customContextLabel,
+            handedness: handedness,
+            gripMode: gripMode
+        )
+    }
+
     private func parsedManualUsageMinutes() -> [String: Double] {
         var parsed: [String: Double] = [:]
 
@@ -3087,6 +2958,63 @@ final class RootViewModel: ObservableObject {
         }
 
         return parsed
+    }
+
+    private func seedUITestingStateIfRequested() {
+        guard ProcessInfo.processInfo.arguments.contains("-uitesting-seed-flow") else {
+            return
+        }
+
+        let seededProfile = Profile(
+            name: "Workday · Right · One-Hand",
+            context: .workday,
+            handedness: .right,
+            gripMode: .oneHand
+        )
+        try? profileRepository.upsert(seededProfile)
+        savedProfiles = [seededProfile]
+        selectedProfileID = seededProfile.id
+        profileName = seededProfile.name
+
+        let alphaID = UUID()
+        let betaID = UUID()
+        let gammaID = UUID()
+
+        appNamesByID = [
+            alphaID: "Maps",
+            betaID: "News",
+            gammaID: "Photos"
+        ]
+
+        let slotA = Slot(page: 0, row: 1, column: 1)
+        let slotB = Slot(page: 0, row: 1, column: 2)
+        let slotC = Slot(page: 0, row: 2, column: 1)
+
+        detectedSlots = [
+            DetectedAppSlot(appName: "Maps", confidence: 0.94, slot: slotA),
+            DetectedAppSlot(appName: "News", confidence: 0.90, slot: slotB),
+            DetectedAppSlot(appName: "Photos", confidence: 0.88, slot: slotC)
+        ]
+        originalDetectedSlots = detectedSlots
+
+        let seededPage = ScreenshotPage(filePath: "/tmp/hso-uitest-seed.png", pageIndex: 0)
+        importSession = ScreenshotImportSession(pages: [seededPage])
+
+        currentLayoutAssignments = [
+            LayoutAssignment(appID: alphaID, slot: slotA),
+            LayoutAssignment(appID: betaID, slot: slotB),
+            LayoutAssignment(appID: gammaID, slot: slotC)
+        ]
+        recommendedLayoutAssignments = [
+            LayoutAssignment(appID: alphaID, slot: Slot(page: 0, row: 4, column: 3)),
+            LayoutAssignment(appID: betaID, slot: slotB),
+            LayoutAssignment(appID: gammaID, slot: Slot(page: 0, row: 3, column: 2))
+        ]
+        moveSteps = [
+            MoveStep(appID: alphaID, fromSlot: slotA, toSlot: Slot(page: 0, row: 4, column: 3)),
+            MoveStep(appID: gammaID, fromSlot: slotC, toSlot: Slot(page: 0, row: 3, column: 2))
+        ]
+        simulationSummary = SimulationSummary(aggregateScoreDelta: 0.142, moveCount: moveSteps.count)
     }
 
     private func applyImportedUsage(_ entries: [ScreenTimeUsageEntry]) {

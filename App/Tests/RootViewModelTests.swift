@@ -16,6 +16,53 @@ final class RootViewModelTests: XCTestCase {
         XCTAssertFalse(model.canSubmitProfile)
     }
 
+    func testApplyContextBaselineUsesExpectedWeights() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+
+        model.applyContextBaseline(for: .workday)
+        XCTAssertEqual(model.utilityWeight, 0.58, accuracy: 0.0001)
+        XCTAssertEqual(model.flowWeight, 0.18, accuracy: 0.0001)
+        XCTAssertEqual(model.aestheticsWeight, 0.09, accuracy: 0.0001)
+        XCTAssertEqual(model.moveCostWeight, 0.15, accuracy: 0.0001)
+
+        model.applyContextBaseline(for: .weekend)
+        XCTAssertEqual(model.utilityWeight, 0.45, accuracy: 0.0001)
+        XCTAssertEqual(model.flowWeight, 0.20, accuracy: 0.0001)
+        XCTAssertEqual(model.aestheticsWeight, 0.20, accuracy: 0.0001)
+        XCTAssertEqual(model.moveCostWeight, 0.15, accuracy: 0.0001)
+
+        model.visualModeEnabled = true
+        model.applyContextBaseline(for: .custom)
+        XCTAssertEqual(model.utilityWeight, 0.45, accuracy: 0.0001)
+        XCTAssertEqual(model.flowWeight, 0.20, accuracy: 0.0001)
+        XCTAssertEqual(model.aestheticsWeight, 0.20, accuracy: 0.0001)
+        XCTAssertEqual(model.moveCostWeight, 0.15, accuracy: 0.0001)
+        XCTAssertFalse(model.visualModeEnabled)
+    }
+
+    func testSaveProfilePreservesManualIntentOverrideAfterContextBaseline() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        model.context = .weekend
+        model.applyContextBaseline(for: .weekend)
+
+        model.utilityWeight = 0.28
+        model.flowWeight = 0.14
+        model.aestheticsWeight = 0.08
+        model.moveCostWeight = 0.50
+        model.profileName = "Stable Override"
+
+        model.saveProfile()
+
+        guard let saved = model.savedProfiles.first(where: { $0.name == "Stable Override" }) else {
+            XCTFail("Expected saved profile")
+            return
+        }
+        XCTAssertEqual(saved.goalWeights.utility, 0.28, accuracy: 0.0001)
+        XCTAssertEqual(saved.goalWeights.flow, 0.14, accuracy: 0.0001)
+        XCTAssertEqual(saved.goalWeights.aesthetics, 0.08, accuracy: 0.0001)
+        XCTAssertEqual(saved.goalWeights.moveCost, 0.50, accuracy: 0.0001)
+    }
+
     func testAdjustDetectedSlotClampsToSupportedBounds() {
         let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
         model.importSession = ScreenshotImportSession(
@@ -149,6 +196,45 @@ final class RootViewModelTests: XCTestCase {
         XCTAssertNil(workdayProfile?.customContextLabel)
     }
 
+    func testSaveProfileAutoNamesAndDeduplicates() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        model.profileName = ""
+        model.context = .workday
+        model.handedness = .right
+        model.gripMode = .oneHand
+
+        model.saveProfile()
+        model.profileName = ""
+        model.saveProfile()
+
+        let names = model.savedProfiles.map(\.name)
+        XCTAssertTrue(names.contains("Workday · Right · One-Hand"))
+        XCTAssertTrue(names.contains("Workday · Right · One-Hand #2"))
+    }
+
+    func testSaveProfileAutoNameUsesCustomContextLabel() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        model.profileName = ""
+        model.context = .custom
+        model.customContextLabel = "Commute"
+        model.handedness = .left
+        model.gripMode = .twoHand
+
+        model.saveProfile()
+
+        XCTAssertTrue(model.savedProfiles.map(\.name).contains("Commute · Left · Two-Hand"))
+    }
+
+    func testSaveProfileClampsLongNameToEightyCharacters() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        model.profileName = String(repeating: "A", count: 120)
+
+        model.saveProfile()
+
+        let saved = model.savedProfiles.first { $0.name.hasPrefix("A") }
+        XCTAssertEqual(saved?.name.count, 80)
+    }
+
     func testSetDetectedSlotMovesIconPreviewToUpdatedSlot() {
         let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
         let original = Slot(page: 0, row: 0, column: 0)
@@ -168,6 +254,22 @@ final class RootViewModelTests: XCTestCase {
         XCTAssertEqual(model.detectedSlots[0].slot, expected)
         XCTAssertNil(model.detectedIconPreviewDataBySlot[original])
         XCTAssertEqual(model.detectedIconPreviewDataBySlot[expected], marker)
+    }
+
+    func testPreviewIconDataResolvesByCanonicalDisplayName() throws {
+        let model = configuredModelWithGeneratedGuide()
+        let alphaID = try XCTUnwrap(
+            model.currentLayoutAssignments
+                .first(where: { model.displayName(for: $0.appID) == "Alpha" })?
+                .appID
+        )
+        let alphaSlot = try XCTUnwrap(
+            model.detectedSlots.first(where: { $0.appName == "Alpha" })?.slot
+        )
+        let iconData = Data([0x01, 0x02, 0x03])
+        model.detectedIconPreviewDataBySlot = [alphaSlot: iconData]
+
+        XCTAssertEqual(model.previewIconData(for: alphaID), iconData)
     }
 
     func testUsageEditorAppNamesDeduplicatesByCanonicalName() {
