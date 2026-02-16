@@ -31,6 +31,7 @@ let package = Package(
         .testTarget(name: "CoreTests", dependencies: ["Core"]),
         .testTarget(name: "IngestionTests", dependencies: ["Ingestion", "Core"]),
         .testTarget(name: "ProfilesTests", dependencies: ["Profiles", "Core"]),
+        .testTarget(name: "UsageTests", dependencies: ["Usage"]),
         .testTarget(name: "OptimizerTests", dependencies: ["Optimizer", "Core"])
     ]
 )

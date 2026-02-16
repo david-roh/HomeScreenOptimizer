@@ -7,6 +7,7 @@ import PhotosUI
 import Profiles
 import Simulation
 import SwiftUI
+import Usage
 
 struct RootView: View {
     @StateObject private var model = RootViewModel()
@@ -32,6 +33,9 @@ struct RootView: View {
             .navigationTitle("HomeScreenOptimizer")
             .onAppear {
                 model.loadProfiles()
+            }
+            .onChange(of: model.selectedProfileID) { _, _ in
+                model.handleProfileSelectionChange()
             }
             .onChange(of: selectedItem) { _, item in
                 guard let item else {
@@ -351,6 +355,43 @@ struct RootView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Toggle("Use manual usage input", isOn: $model.manualUsageEnabled)
+
+                if model.manualUsageEnabled {
+                    Text("Enter minutes per day for each app to drive utility ranking.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(model.usageEditorAppNames, id: \.self) { appName in
+                        HStack {
+                            Text(appName)
+                                .lineLimit(1)
+                            Spacer()
+                            TextField(
+                                "min/day",
+                                text: model.bindingForUsageMinutes(appName: appName)
+                            )
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 110)
+                        }
+                    }
+
+                    HStack {
+                        Button("Load Saved Usage") {
+                            model.loadManualUsageSnapshot()
+                        }
+                        .disabled(model.selectedProfileID == nil)
+
+                        Spacer()
+
+                        Button("Save Usage") {
+                            model.saveManualUsageSnapshot()
+                        }
+                        .disabled(model.selectedProfileID == nil || model.usageEditorAppNames.isEmpty)
+                    }
+                }
+
                 Button("Generate Rearrangement Guide") {
                     model.generateRecommendationGuide()
                 }
@@ -469,14 +510,18 @@ final class RootViewModel: ObservableObject {
     @Published var recommendedLayoutAssignments: [LayoutAssignment] = []
     @Published var moveSteps: [MoveStep] = []
     @Published var simulationSummary: SimulationSummary?
+    @Published var manualUsageEnabled = false
+    @Published var usageDraftByNormalizedName: [String: String] = [:]
 
     private let profileBuilder = OnboardingProfileBuilder()
     private let profileRepository: FileProfileRepository
+    private let usageRepository: FileUsageSnapshotRepository
     private let importCoordinator: ScreenshotImportCoordinator
     private let ocrExtractor: any LayoutOCRExtracting
     private let ocrPostProcessor = OCRPostProcessor()
     private let gridMapper = HomeScreenGridMapper()
     private let reachabilityCalibrator = ReachabilityCalibrator()
+    private let usageNormalizer = UsageNormalizer()
     private let layoutPlanner = ReachabilityAwareLayoutPlanner()
     private let movePlanBuilder = MovePlanBuilder()
     private let whatIfSimulation = WhatIfSimulation()
@@ -497,6 +542,7 @@ final class RootViewModel: ObservableObject {
         }
 
         profileRepository = FileProfileRepository(fileURL: baseURL.appendingPathComponent("profiles.json"))
+        usageRepository = FileUsageSnapshotRepository(fileURL: baseURL.appendingPathComponent("usage_snapshots.json"))
         let importRepository = FileScreenshotImportSessionRepository(fileURL: baseURL.appendingPathComponent("import_sessions.json"))
         importCoordinator = ScreenshotImportCoordinator(repository: importRepository)
 
@@ -526,8 +572,37 @@ final class RootViewModel: ObservableObject {
         return false
     }
 
+    var usageEditorAppNames: [String] {
+        var seen: Set<String> = []
+        var ordered: [String] = []
+
+        for detected in detectedSlots {
+            let displayName = detected.appName.trimmingCharacters(in: .whitespacesAndNewlines)
+            let canonical = canonicalAppName(displayName)
+            guard !canonical.isEmpty, !seen.contains(canonical) else {
+                continue
+            }
+            seen.insert(canonical)
+            ordered.append(displayName)
+        }
+
+        return ordered.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     func displayName(for appID: UUID) -> String {
         appNamesByID[appID] ?? "Unknown App"
+    }
+
+    func bindingForUsageMinutes(appName: String) -> Binding<String> {
+        let key = canonicalAppName(appName)
+        return Binding(
+            get: {
+                self.usageDraftByNormalizedName[key] ?? ""
+            },
+            set: { newValue in
+                self.usageDraftByNormalizedName[key] = newValue
+            }
+        )
     }
 
     func bindingForDetectedAppName(index: Int) -> Binding<String> {
@@ -542,8 +617,23 @@ final class RootViewModel: ObservableObject {
                 guard self.detectedSlots.indices.contains(index) else {
                     return
                 }
+                let oldName = self.detectedSlots[index].appName
+                let oldKey = self.canonicalAppName(oldName)
                 let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 self.detectedSlots[index].appName = trimmed
+
+                let newKey = self.canonicalAppName(trimmed)
+                guard oldKey != newKey, !oldKey.isEmpty, !newKey.isEmpty else {
+                    self.hydrateUsageDraftFromDetectedApps()
+                    return
+                }
+
+                if let oldValue = self.usageDraftByNormalizedName.removeValue(forKey: oldKey),
+                   self.usageDraftByNormalizedName[newKey] == nil {
+                    self.usageDraftByNormalizedName[newKey] = oldValue
+                }
+
+                self.hydrateUsageDraftFromDetectedApps()
             }
         )
     }
@@ -554,9 +644,14 @@ final class RootViewModel: ObservableObject {
             if selectedProfileID == nil || !savedProfiles.contains(where: { $0.id == selectedProfileID }) {
                 selectedProfileID = savedProfiles.first?.id
             }
+            loadUsageSnapshotForSelectedProfile()
         } catch {
             showStatus("Failed to load profiles: \(error.localizedDescription)", level: .error)
         }
+    }
+
+    func handleProfileSelectionChange() {
+        loadUsageSnapshotForSelectedProfile()
     }
 
     func saveProfile() {
@@ -587,6 +682,7 @@ final class RootViewModel: ObservableObject {
             try profileRepository.upsert(profile)
             loadProfiles()
             selectedProfileID = profile.id
+            loadUsageSnapshotForSelectedProfile()
             showStatus("Saved profile \"\(profile.name)\".", level: .success)
         } catch {
             showStatus("Failed to save profile: \(error.localizedDescription)", level: .error)
@@ -715,9 +811,14 @@ final class RootViewModel: ObservableObject {
         var apps: [AppItem] = []
         var assignments: [LayoutAssignment] = []
         var appNames: [UUID: String] = [:]
+        let manualUsageByName = manualUsageEnabled
+            ? usageNormalizer.normalize(minutesByName: parsedManualUsageMinutes())
+            : [:]
 
         for detected in sortedDetectedSlots {
-            let app = AppItem(displayName: detected.appName, usageScore: max(0.05, detected.confidence))
+            let canonicalName = canonicalAppName(detected.appName)
+            let usageScore = manualUsageByName[canonicalName] ?? max(0.05, detected.confidence)
+            let app = AppItem(displayName: detected.appName, usageScore: usageScore)
             apps.append(app)
             assignments.append(LayoutAssignment(appID: app.id, slot: detected.slot))
             appNames[app.id] = app.displayName
@@ -747,6 +848,56 @@ final class RootViewModel: ObservableObject {
         showStatus("Generated guide with \(planMoves.count) moves.", level: .success)
     }
 
+    func loadManualUsageSnapshot() {
+        guard let profileID = selectedProfileID else {
+            showStatus("Select a profile before loading usage data.", level: .error)
+            return
+        }
+
+        do {
+            guard let snapshot = try usageRepository.fetch(profileID: profileID) else {
+                usageDraftByNormalizedName = [:]
+                showStatus("No saved manual usage for this profile yet.", level: .info)
+                return
+            }
+
+            usageDraftByNormalizedName = Dictionary(uniqueKeysWithValues: snapshot.appMinutesByNormalizedName.map { key, value in
+                (key, String(format: "%.0f", value))
+            })
+            manualUsageEnabled = true
+            hydrateUsageDraftFromDetectedApps()
+            showStatus("Loaded saved manual usage for profile.", level: .success)
+        } catch {
+            showStatus("Failed to load usage data: \(error.localizedDescription)", level: .error)
+        }
+    }
+
+    func saveManualUsageSnapshot() {
+        guard let profileID = selectedProfileID else {
+            showStatus("Select a profile before saving usage data.", level: .error)
+            return
+        }
+
+        do {
+            let parsed = parsedManualUsageMinutes()
+
+            if parsed.isEmpty {
+                try usageRepository.delete(profileID: profileID)
+                showStatus("Cleared saved manual usage for this profile.", level: .info)
+                return
+            }
+
+            var snapshot = try usageRepository.fetch(profileID: profileID) ?? UsageSnapshot(profileID: profileID)
+            snapshot.appMinutesByNormalizedName = parsed
+            snapshot.updatedAt = Date()
+
+            try usageRepository.upsert(snapshot)
+            showStatus("Saved manual usage for \(parsed.count) apps.", level: .success)
+        } catch {
+            showStatus("Failed to save usage data: \(error.localizedDescription)", level: .error)
+        }
+    }
+
     func adjustDetectedSlot(
         index: Int,
         pageDelta: Int = 0,
@@ -774,6 +925,7 @@ final class RootViewModel: ObservableObject {
         }
 
         detectedSlots = originalDetectedSlots
+        hydrateUsageDraftFromDetectedApps()
         showStatus("Restored OCR-detected labels and slots.", level: .info)
     }
 
@@ -809,6 +961,7 @@ final class RootViewModel: ObservableObject {
                     return lhs.slot.column < rhs.slot.column
                 }
             originalDetectedSlots = detectedSlots
+            hydrateUsageDraftFromDetectedApps()
 
             if ocrCandidates.isEmpty {
                 showStatus("No likely app labels detected.", level: .info)
@@ -909,6 +1062,34 @@ final class RootViewModel: ObservableObject {
         return savedProfiles.first { $0.id == selectedProfileID }
     }
 
+    private func loadUsageSnapshotForSelectedProfile() {
+        guard let profileID = selectedProfileID else {
+            usageDraftByNormalizedName = [:]
+            manualUsageEnabled = false
+            return
+        }
+
+        do {
+            if let snapshot = try usageRepository.fetch(profileID: profileID) {
+                usageDraftByNormalizedName = Dictionary(
+                    uniqueKeysWithValues: snapshot.appMinutesByNormalizedName.map { key, value in
+                        (key, String(format: "%.0f", value))
+                    }
+                )
+                manualUsageEnabled = true
+            } else {
+                usageDraftByNormalizedName = [:]
+                manualUsageEnabled = false
+            }
+
+            hydrateUsageDraftFromDetectedApps()
+        } catch {
+            usageDraftByNormalizedName = [:]
+            manualUsageEnabled = false
+            showStatus("Failed to load usage snapshot: \(error.localizedDescription)", level: .error)
+        }
+    }
+
     private func resetRecommendationOutput() {
         currentLayoutAssignments = []
         recommendedLayoutAssignments = []
@@ -956,6 +1137,40 @@ final class RootViewModel: ObservableObject {
     private func showStatus(_ message: String, level: StatusLevel = .info) {
         statusMessage = message
         statusLevel = level
+    }
+
+    private func parsedManualUsageMinutes() -> [String: Double] {
+        var parsed: [String: Double] = [:]
+
+        for (key, rawValue) in usageDraftByNormalizedName {
+            let cleaned = rawValue
+                .replacingOccurrences(of: ",", with: ".")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard let value = Double(cleaned), value > 0 else {
+                continue
+            }
+
+            parsed[key] = value
+        }
+
+        return parsed
+    }
+
+    private func hydrateUsageDraftFromDetectedApps() {
+        let expectedKeys = Set(usageEditorAppNames.map(canonicalAppName))
+
+        for key in expectedKeys where usageDraftByNormalizedName[key] == nil {
+            usageDraftByNormalizedName[key] = ""
+        }
+
+        usageDraftByNormalizedName = usageDraftByNormalizedName.filter { key, _ in
+            expectedKeys.contains(key)
+        }
+    }
+
+    private func canonicalAppName(_ text: String) -> String {
+        usageNormalizer.canonicalName(text)
     }
 
     private func updateCalibrationProgress() {

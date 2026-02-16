@@ -42,6 +42,13 @@
   - Duplicate-slot conflict warning shown before guide generation.
   - iOS unit tests added for correction behaviors in `RootViewModel`.
 
+### E3-T2 Usage fallback import
+- Status: IN_PROGRESS
+- Notes:
+  - Manual usage entry fields (minutes/day) added to recommendation flow.
+  - Usage snapshots persist per profile via file-backed repository.
+  - Normalized manual usage now feeds planner utility scoring.
+
 ### E4-T1 Onboarding profile setup
 - Status: DONE
 - Notes:
@@ -70,6 +77,6 @@
   - Displays score delta, current/recommended slot previews, and manual move sequence.
 
 ## Next immediate tasks
-1. Build E2-T3 manual correction tools (inline rename and slot edits for OCR mistakes).
-2. Add E3-T2 fallback usage import from Screen Time screenshots.
-3. Add E7-T2 guided apply checklist with progress tracking while users move icons.
+1. Extend E3-T2 with Screen Time screenshot OCR import as an alternative to manual entry.
+2. Add E7-T2 guided apply checklist with progress tracking while users move icons.
+3. Add recommendation history persistence per profile (plan snapshots + rerun compare).

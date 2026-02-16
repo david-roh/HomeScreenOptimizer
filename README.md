@@ -7,7 +7,9 @@ This repository contains the MVP foundation for an iOS home-screen layout optimi
 - Core domain models and persistence repositories.
 - Screenshot import session pipeline (domain layer).
 - OCR extraction + post-processing + grid slot mapping for imported screenshots.
+- Inline OCR correction controls for app-name and slot adjustments.
 - Onboarding profile builder, goal weighting, and reachability calibration mini-test.
+- Manual usage input (minutes/day) with per-profile persistence.
 - Reachability-aware layout planner with generated manual move guide.
 - iOS SwiftUI shell app target with simulator support.
 - CI workflow with build and tests.
