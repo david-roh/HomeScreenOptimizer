@@ -438,6 +438,37 @@ struct RootView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                if !model.recommendationHistory.isEmpty {
+                    Text("Recommendation history")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(Array(model.recommendationHistory.prefix(5).enumerated()), id: \.offset) { _, plan in
+                        HStack(alignment: .top) {
+                            Text(model.historyLabel(for: plan))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if plan.id == model.activeRecommendationPlanID {
+                                Text("Current")
+                                    .font(.caption2)
+                                    .foregroundStyle(.green)
+                            } else {
+                                Button("Compare") {
+                                    model.compareAgainstHistory(planID: plan.id)
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                }
+
+                if !model.historyComparisonMessage.isEmpty {
+                    Text(model.historyComparisonMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 if !model.currentLayoutAssignments.isEmpty {
                     Text("Current layout")
                         .font(.footnote)
@@ -585,9 +616,12 @@ final class RootViewModel: ObservableObject {
     @Published var importedUsageEntries: [ScreenTimeUsageEntry] = []
     @Published var completedMoveStepIDs: Set<UUID> = []
     @Published var activeRecommendationPlanID: UUID?
+    @Published var recommendationHistory: [LayoutPlan] = []
+    @Published var historyComparisonMessage = ""
 
     private let profileBuilder = OnboardingProfileBuilder()
     private let profileRepository: FileProfileRepository
+    private let layoutPlanRepository: FileLayoutPlanRepository
     private let usageRepository: FileUsageSnapshotRepository
     private let guidedApplyDraftRepository: FileGuidedApplyDraftRepository
     private let importCoordinator: ScreenshotImportCoordinator
@@ -617,6 +651,7 @@ final class RootViewModel: ObservableObject {
         }
 
         profileRepository = FileProfileRepository(fileURL: baseURL.appendingPathComponent("profiles.json"))
+        layoutPlanRepository = FileLayoutPlanRepository(fileURL: baseURL.appendingPathComponent("layout_plans.json"))
         usageRepository = FileUsageSnapshotRepository(fileURL: baseURL.appendingPathComponent("usage_snapshots.json"))
         guidedApplyDraftRepository = FileGuidedApplyDraftRepository(fileURL: baseURL.appendingPathComponent("guided_apply_drafts.json"))
         let importRepository = FileScreenshotImportSessionRepository(fileURL: baseURL.appendingPathComponent("import_sessions.json"))
@@ -681,6 +716,16 @@ final class RootViewModel: ObservableObject {
         moveSteps.first { !completedMoveStepIDs.contains($0.id) }?.id
     }
 
+    func historyLabel(for plan: LayoutPlan) -> String {
+        let when = DateFormatter.localizedString(
+            from: plan.generatedAt,
+            dateStyle: .short,
+            timeStyle: .short
+        )
+        let score = String(format: "%.3f", plan.scoreBreakdown.aggregateScore)
+        return "\(when) • score \(score)"
+    }
+
     func displayName(for appID: UUID) -> String {
         appNamesByID[appID] ?? "Unknown App"
     }
@@ -738,6 +783,7 @@ final class RootViewModel: ObservableObject {
             }
             loadUsageSnapshotForSelectedProfile()
             loadGuidedApplyDraftForSelectedProfile()
+            loadRecommendationHistoryForSelectedProfile()
         } catch {
             showStatus("Failed to load profiles: \(error.localizedDescription)", level: .error)
         }
@@ -746,6 +792,7 @@ final class RootViewModel: ObservableObject {
     func handleProfileSelectionChange() {
         loadUsageSnapshotForSelectedProfile()
         loadGuidedApplyDraftForSelectedProfile()
+        loadRecommendationHistoryForSelectedProfile()
     }
 
     func saveProfile() {
@@ -967,6 +1014,7 @@ final class RootViewModel: ObservableObject {
             candidateScore: generated.recommendedPlan.scoreBreakdown,
             moveCount: planMoves.count
         )
+        let previousPlan = recommendationHistory.first
 
         currentLayoutAssignments = assignments
         recommendedLayoutAssignments = generated.recommendedPlan.assignments
@@ -976,6 +1024,23 @@ final class RootViewModel: ObservableObject {
         activeRecommendationPlanID = generated.recommendedPlan.id
         completedMoveStepIDs = []
         persistGuidedApplyDraft()
+        do {
+            try layoutPlanRepository.upsert(generated.recommendedPlan)
+            loadRecommendationHistoryForSelectedProfile()
+        } catch {
+            showStatus("Generated guide but failed to save plan history: \(error.localizedDescription)", level: .error)
+        }
+
+        if let previousPlan {
+            historyComparisonMessage = buildHistoryComparisonMessage(
+                currentPlan: generated.recommendedPlan,
+                baselinePlan: previousPlan,
+                currentAssignments: assignments,
+                currentMoveCount: planMoves.count
+            )
+        } else {
+            historyComparisonMessage = ""
+        }
 
         showStatus("Generated guide with \(planMoves.count) moves.", level: .success)
     }
@@ -1085,6 +1150,29 @@ final class RootViewModel: ObservableObject {
     func resetMoveProgress() {
         completedMoveStepIDs = []
         persistGuidedApplyDraft()
+    }
+
+    func compareAgainstHistory(planID: UUID) {
+        guard let currentPlanID = activeRecommendationPlanID else {
+            showStatus("Generate a recommendation before comparing history.", level: .info)
+            return
+        }
+        guard currentPlanID != planID else {
+            historyComparisonMessage = ""
+            return
+        }
+        guard let currentPlan = recommendationHistory.first(where: { $0.id == currentPlanID }),
+              let baseline = recommendationHistory.first(where: { $0.id == planID }) else {
+            showStatus("Selected history plan is no longer available.", level: .error)
+            return
+        }
+
+        historyComparisonMessage = buildHistoryComparisonMessage(
+            currentPlan: currentPlan,
+            baselinePlan: baseline,
+            currentAssignments: currentLayoutAssignments,
+            currentMoveCount: moveSteps.count
+        )
     }
 
     private func analyzeScreenshots(_ pages: [ScreenshotPage]) async {
@@ -1251,6 +1339,23 @@ final class RootViewModel: ObservableObject {
         }
     }
 
+    private func loadRecommendationHistoryForSelectedProfile() {
+        guard let profileID = selectedProfileID else {
+            recommendationHistory = []
+            historyComparisonMessage = ""
+            return
+        }
+
+        do {
+            recommendationHistory = try layoutPlanRepository
+                .fetchAll(for: profileID)
+                .sorted { $0.generatedAt > $1.generatedAt }
+        } catch {
+            recommendationHistory = []
+            showStatus("Failed to load recommendation history: \(error.localizedDescription)", level: .error)
+        }
+    }
+
     private func loadGuidedApplyDraftForSelectedProfile() {
         guard let profileID = selectedProfileID else {
             currentLayoutAssignments = []
@@ -1312,6 +1417,36 @@ final class RootViewModel: ObservableObject {
         }
     }
 
+    private func buildHistoryComparisonMessage(
+        currentPlan: LayoutPlan,
+        baselinePlan: LayoutPlan,
+        currentAssignments: [LayoutAssignment],
+        currentMoveCount: Int
+    ) -> String {
+        let scoreDelta = currentPlan.scoreBreakdown.aggregateScore - baselinePlan.scoreBreakdown.aggregateScore
+        let baselineMoveCount = movePlanBuilder.buildMoves(
+            current: currentAssignments,
+            target: baselinePlan.assignments
+        ).count
+        let moveDelta = currentMoveCount - baselineMoveCount
+        let moveText: String
+        if moveDelta == 0 {
+            moveText = "same move count"
+        } else if moveDelta < 0 {
+            moveText = "\(abs(moveDelta)) fewer moves"
+        } else {
+            moveText = "\(moveDelta) more moves"
+        }
+
+        let baselineDate = DateFormatter.localizedString(
+            from: baselinePlan.generatedAt,
+            dateStyle: .short,
+            timeStyle: .short
+        )
+
+        return "Vs \(baselineDate): \(String(format: "%+.3f", scoreDelta)) score, \(moveText)."
+    }
+
     private func resetRecommendationOutput() {
         currentLayoutAssignments = []
         recommendedLayoutAssignments = []
@@ -1321,6 +1456,7 @@ final class RootViewModel: ObservableObject {
         originalDetectedSlots = []
         completedMoveStepIDs = []
         activeRecommendationPlanID = nil
+        historyComparisonMessage = ""
     }
 
     private func writeImageToTemporaryFile(data: Data) throws -> URL {

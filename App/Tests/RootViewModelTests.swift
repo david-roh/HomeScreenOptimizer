@@ -111,6 +111,33 @@ final class RootViewModelTests: XCTestCase {
         XCTAssertFalse(model.completedMoveStepIDs.contains(stepID))
     }
 
+    func testSecondGenerationStoresHistoryAndBuildsRerunComparison() {
+        let model = configuredModelWithGeneratedGuide()
+        XCTAssertEqual(model.recommendationHistory.count, 1)
+        XCTAssertTrue(model.historyComparisonMessage.isEmpty)
+
+        model.generateRecommendationGuide()
+
+        XCTAssertEqual(model.recommendationHistory.count, 2)
+        XCTAssertFalse(model.historyComparisonMessage.isEmpty)
+    }
+
+    func testCompareAgainstHistoryBuildsComparisonMessage() throws {
+        let model = configuredModelWithGeneratedGuide()
+        model.generateRecommendationGuide()
+        XCTAssertEqual(model.recommendationHistory.count, 2)
+
+        let baselineID = try XCTUnwrap(
+            model.recommendationHistory
+                .first(where: { $0.id != model.activeRecommendationPlanID })?
+                .id
+        )
+        model.compareAgainstHistory(planID: baselineID)
+
+        XCTAssertFalse(model.historyComparisonMessage.isEmpty)
+        XCTAssertTrue(model.historyComparisonMessage.contains("Vs "))
+    }
+
     func testHandleProfileSelectionChangeClearsChecklistWhenNoDraftForSelectedProfile() {
         let model = configuredModelWithGeneratedGuide()
         let otherProfile = Profile(

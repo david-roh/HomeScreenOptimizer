@@ -84,7 +84,14 @@
   - "Mark Next Complete" and reset-progress controls added.
   - Progress persists per profile and restores after profile switching/app relaunch.
 
+### E7-T3 Recommendation history
+- Status: IN_PROGRESS
+- Notes:
+  - Recommended plans are now persisted as per-profile history snapshots.
+  - App shows recent history rows with timestamp and aggregate score.
+  - Current run can be compared against previous runs for score and move-count delta.
+
 ## Next immediate tasks
-1. Add recommendation history persistence per profile (plan snapshots + rerun compare).
-2. Expand Screen Time parser with locale/time-format variations and correction UI.
-3. Add analytics event hooks for guided-apply start/progress/completion.
+1. Expand Screen Time parser with locale/time-format variations and correction UI.
+2. Add analytics event hooks for guided-apply start/progress/completion.
+3. Add guide completion export/share summary for user follow-through.
