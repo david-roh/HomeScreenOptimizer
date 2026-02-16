@@ -48,6 +48,7 @@
   - Manual usage entry fields (minutes/day) added to recommendation flow.
   - Usage snapshots persist per profile via file-backed repository.
   - Normalized manual usage now feeds planner utility scoring.
+  - Screen Time screenshot OCR import now auto-fills usage minutes.
 
 ### E4-T1 Onboarding profile setup
 - Status: DONE
@@ -77,6 +78,6 @@
   - Displays score delta, current/recommended slot previews, and manual move sequence.
 
 ## Next immediate tasks
-1. Extend E3-T2 with Screen Time screenshot OCR import as an alternative to manual entry.
-2. Add E7-T2 guided apply checklist with progress tracking while users move icons.
-3. Add recommendation history persistence per profile (plan snapshots + rerun compare).
+1. Add E7-T2 guided apply checklist with progress tracking while users move icons.
+2. Add recommendation history persistence per profile (plan snapshots + rerun compare).
+3. Expand Screen Time parser with locale/time-format variations and correction UI.

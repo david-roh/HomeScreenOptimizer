@@ -12,6 +12,7 @@ import Usage
 struct RootView: View {
     @StateObject private var model = RootViewModel()
     @State private var selectedItem: PhotosPickerItem?
+    @State private var selectedUsageItem: PhotosPickerItem?
 
     var body: some View {
         NavigationStack {
@@ -45,6 +46,16 @@ struct RootView: View {
                 Task {
                     await model.handlePickedItem(item)
                     selectedItem = nil
+                }
+            }
+            .onChange(of: selectedUsageItem) { _, item in
+                guard let item else {
+                    return
+                }
+
+                Task {
+                    await model.handlePickedUsageItem(item)
+                    selectedUsageItem = nil
                 }
             }
         }
@@ -362,6 +373,28 @@ struct RootView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
+                    PhotosPicker(selection: $selectedUsageItem, matching: .images) {
+                        Label("Import Screen Time Screenshot", systemImage: "chart.bar.doc.horizontal")
+                    }
+                    .disabled(model.selectedProfileID == nil)
+
+                    if !model.importedUsageEntries.isEmpty {
+                        Text("Latest imported usage")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+
+                        ForEach(Array(model.importedUsageEntries.prefix(6).enumerated()), id: \.offset) { _, entry in
+                            HStack {
+                                Text(entry.appName)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text("\(Int(entry.minutesPerDay)) min")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
                     ForEach(model.usageEditorAppNames, id: \.self) { appName in
                         HStack {
                             Text(appName)
@@ -512,6 +545,7 @@ final class RootViewModel: ObservableObject {
     @Published var simulationSummary: SimulationSummary?
     @Published var manualUsageEnabled = false
     @Published var usageDraftByNormalizedName: [String: String] = [:]
+    @Published var importedUsageEntries: [ScreenTimeUsageEntry] = []
 
     private let profileBuilder = OnboardingProfileBuilder()
     private let profileRepository: FileProfileRepository
@@ -520,6 +554,7 @@ final class RootViewModel: ObservableObject {
     private let ocrExtractor: any LayoutOCRExtracting
     private let ocrPostProcessor = OCRPostProcessor()
     private let gridMapper = HomeScreenGridMapper()
+    private let screenTimeUsageParser = ScreenTimeUsageParser()
     private let reachabilityCalibrator = ReachabilityCalibrator()
     private let usageNormalizer = UsageNormalizer()
     private let layoutPlanner = ReachabilityAwareLayoutPlanner()
@@ -722,6 +757,41 @@ final class RootViewModel: ObservableObject {
         }
     }
 
+    func handlePickedUsageItem(_ item: PhotosPickerItem) async {
+        guard selectedProfileID != nil else {
+            showStatus("Select a profile before importing usage.", level: .error)
+            return
+        }
+
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                showStatus("Could not read selected usage screenshot.", level: .error)
+                return
+            }
+
+            let fileURL = try writeImageToTemporaryFile(data: data)
+            let entries: [ScreenTimeUsageEntry]
+
+            if let locatingExtractor = ocrExtractor as? any LayoutOCRLocating {
+                let located = try await locatingExtractor.extractLocatedAppLabels(from: fileURL.path)
+                entries = screenTimeUsageParser.parse(from: located)
+            } else {
+                let labels = try await ocrExtractor.extractAppLabels(from: fileURL.path)
+                entries = screenTimeUsageParser.parse(from: labels)
+            }
+
+            guard !entries.isEmpty else {
+                showStatus("No app usage durations detected in screenshot.", level: .info)
+                return
+            }
+
+            applyImportedUsage(entries)
+            showStatus("Imported usage for \(entries.count) apps.", level: .success)
+        } catch {
+            showStatus("Failed to import usage screenshot: \(error.localizedDescription)", level: .error)
+        }
+    }
+
     func removePage(pageID: UUID) {
         guard let session = importSession else {
             return
@@ -857,6 +927,7 @@ final class RootViewModel: ObservableObject {
         do {
             guard let snapshot = try usageRepository.fetch(profileID: profileID) else {
                 usageDraftByNormalizedName = [:]
+                importedUsageEntries = []
                 showStatus("No saved manual usage for this profile yet.", level: .info)
                 return
             }
@@ -865,6 +936,7 @@ final class RootViewModel: ObservableObject {
                 (key, String(format: "%.0f", value))
             })
             manualUsageEnabled = true
+            importedUsageEntries = []
             hydrateUsageDraftFromDetectedApps()
             showStatus("Loaded saved manual usage for profile.", level: .success)
         } catch {
@@ -1066,6 +1138,7 @@ final class RootViewModel: ObservableObject {
         guard let profileID = selectedProfileID else {
             usageDraftByNormalizedName = [:]
             manualUsageEnabled = false
+            importedUsageEntries = []
             return
         }
 
@@ -1082,10 +1155,12 @@ final class RootViewModel: ObservableObject {
                 manualUsageEnabled = false
             }
 
+            importedUsageEntries = []
             hydrateUsageDraftFromDetectedApps()
         } catch {
             usageDraftByNormalizedName = [:]
             manualUsageEnabled = false
+            importedUsageEntries = []
             showStatus("Failed to load usage snapshot: \(error.localizedDescription)", level: .error)
         }
     }
@@ -1157,15 +1232,27 @@ final class RootViewModel: ObservableObject {
         return parsed
     }
 
+    private func applyImportedUsage(_ entries: [ScreenTimeUsageEntry]) {
+        manualUsageEnabled = true
+        importedUsageEntries = entries
+
+        for entry in entries {
+            let key = canonicalAppName(entry.appName)
+            guard !key.isEmpty else {
+                continue
+            }
+
+            usageDraftByNormalizedName[key] = String(format: "%.0f", entry.minutesPerDay)
+        }
+
+        hydrateUsageDraftFromDetectedApps()
+    }
+
     private func hydrateUsageDraftFromDetectedApps() {
         let expectedKeys = Set(usageEditorAppNames.map(canonicalAppName))
 
         for key in expectedKeys where usageDraftByNormalizedName[key] == nil {
             usageDraftByNormalizedName[key] = ""
-        }
-
-        usageDraftByNormalizedName = usageDraftByNormalizedName.filter { key, _ in
-            expectedKeys.contains(key)
         }
     }
 
