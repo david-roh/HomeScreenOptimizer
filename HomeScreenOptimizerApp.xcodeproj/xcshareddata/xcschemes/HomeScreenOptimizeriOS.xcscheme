@@ -50,6 +50,17 @@
                ReferencedContainer = "container:HomeScreenOptimizerApp.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0A33E019E5E21583AC07FDFF"
+               BuildableName = "HomeScreenOptimizeriOSUITests.xctest"
+               BlueprintName = "HomeScreenOptimizeriOSUITests"
+               ReferencedContainer = "container:HomeScreenOptimizerApp.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

@@ -12,6 +12,7 @@
 		3EE99F13D579FD57A0425724 /* HomeScreenUsageReportExtension.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = 84A188C9EF78983B65C6BC15 /* HomeScreenUsageReportExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		6052741A5F7832968EFA97A1 /* Profiles in Frameworks */ = {isa = PBXBuildFile; productRef = 069A9C72A2AE77037651510A /* Profiles */; };
 		648B229EE38ED02741CC3C15 /* HomeScreenOptimizeriOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D21AF8BA2185F422EC33CC82 /* HomeScreenOptimizeriOSApp.swift */; };
+		6788761FDECB305533CFAC03 /* NativeScreenTimeSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94CCACE4176CCECFEF0E719D /* NativeScreenTimeSmokeTests.swift */; };
 		729426D8D3CC7C7BC70A2880 /* Simulation in Frameworks */ = {isa = PBXBuildFile; productRef = 9BE6D6B76CC3349901C618BD /* Simulation */; };
 		7C9BA7747C8D4EEAB4ED0E6F /* Guide in Frameworks */ = {isa = PBXBuildFile; productRef = 6858C5D5DFA330EFE748AE53 /* Guide */; };
 		80C0C96CFD2B928B352FB95D /* UsageSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64E5071554F7DD14AE9678A /* UsageSummaryView.swift */; };
@@ -41,6 +42,13 @@
 			remoteGlobalIDString = 8F5AB4640E5586BF93276AB1;
 			remoteInfo = HomeScreenOptimizeriOS;
 		};
+		C8F6644C3A5C36E5335BDEE0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C8AD542DDB5E526C9DDA384D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8F5AB4640E5586BF93276AB1;
+			remoteInfo = HomeScreenOptimizeriOS;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -58,11 +66,13 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		039FFCBB6673BA11598A2055 /* HomeScreenOptimizeriOSUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HomeScreenOptimizeriOSUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		451B20FB6C3E7AF19B14A06A /* HomeScreenUsageReportExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HomeScreenUsageReportExtension.entitlements; sourceTree = "<group>"; };
 		69CC611867AAEBF47EB5603B /* HomeScreenOptimizeriOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HomeScreenOptimizeriOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7305AF2F30DDF10053FD5D1F /* HomeScreenOptimizeriOSTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HomeScreenOptimizeriOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		84A188C9EF78983B65C6BC15 /* HomeScreenUsageReportExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = HomeScreenUsageReportExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		8CA5A3705EEE7A1967AF7E00 /* HomeScreenOptimizeriOSTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreenOptimizeriOSTests.swift; sourceTree = "<group>"; };
+		94CCACE4176CCECFEF0E719D /* NativeScreenTimeSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeScreenTimeSmokeTests.swift; sourceTree = "<group>"; };
 		969424125D6FA48324FA7872 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A64E5071554F7DD14AE9678A /* UsageSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSummaryView.swift; sourceTree = "<group>"; };
 		A7F676E9B101BDFFFEF65EC0 /* New project */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "New project"; path = .; sourceTree = SOURCE_ROOT; };
@@ -100,6 +110,15 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		66918CEECD822A526799A778 /* UITests */ = {
+			isa = PBXGroup;
+			children = (
+				94CCACE4176CCECFEF0E719D /* NativeScreenTimeSmokeTests.swift */,
+			);
+			name = UITests;
+			path = App/UITests;
+			sourceTree = "<group>";
+		};
 		677043C29E704E0DEF96D9EC /* Tests */ = {
 			isa = PBXGroup;
 			children = (
@@ -127,6 +146,7 @@
 				C3762696321F62C885C6302E /* ScreenTimeReportExtension */,
 				6DF082BC390CB45E5568B5F5 /* Sources */,
 				677043C29E704E0DEF96D9EC /* Tests */,
+				66918CEECD822A526799A778 /* UITests */,
 				B16AA2A7C04EE004406922E4 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -136,6 +156,7 @@
 			children = (
 				69CC611867AAEBF47EB5603B /* HomeScreenOptimizeriOS.app */,
 				7305AF2F30DDF10053FD5D1F /* HomeScreenOptimizeriOSTests.xctest */,
+				039FFCBB6673BA11598A2055 /* HomeScreenOptimizeriOSUITests.xctest */,
 				84A188C9EF78983B65C6BC15 /* HomeScreenUsageReportExtension.appex */,
 			);
 			name = Products;
@@ -165,6 +186,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0A33E019E5E21583AC07FDFF /* HomeScreenOptimizeriOSUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 435363BA5C32F9C5A9B204A3 /* Build configuration list for PBXNativeTarget "HomeScreenOptimizeriOSUITests" */;
+			buildPhases = (
+				EE3AAB3118270581863946FA /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4D0919E77E2F3CA4D3865CEF /* PBXTargetDependency */,
+			);
+			name = HomeScreenOptimizeriOSUITests;
+			packageProductDependencies = (
+			);
+			productName = HomeScreenOptimizeriOSUITests;
+			productReference = 039FFCBB6673BA11598A2055 /* HomeScreenOptimizeriOSUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		8F5AB4640E5586BF93276AB1 /* HomeScreenOptimizeriOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 0A42DD4C01B1106F1A3DD9D5 /* Build configuration list for PBXNativeTarget "HomeScreenOptimizeriOS" */;
@@ -239,6 +278,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					0A33E019E5E21583AC07FDFF = {
+						DevelopmentTeam = "";
+						TestTargetID = 8F5AB4640E5586BF93276AB1;
+					};
 					8F5AB4640E5586BF93276AB1 = {
 						DevelopmentTeam = "";
 					};
@@ -269,6 +312,7 @@
 			targets = (
 				8F5AB4640E5586BF93276AB1 /* HomeScreenOptimizeriOS */,
 				A83E46F9A7F349371D52F65F /* HomeScreenOptimizeriOSTests */,
+				0A33E019E5E21583AC07FDFF /* HomeScreenOptimizeriOSUITests */,
 				CF37351C05D3DD2801739CDF /* HomeScreenUsageReportExtension */,
 			);
 		};
@@ -303,6 +347,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		EE3AAB3118270581863946FA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6788761FDECB305533CFAC03 /* NativeScreenTimeSmokeTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -310,6 +362,11 @@
 			isa = PBXTargetDependency;
 			target = CF37351C05D3DD2801739CDF /* HomeScreenUsageReportExtension */;
 			targetProxy = 1D20363DB3192996CA6337FF /* PBXContainerItemProxy */;
+		};
+		4D0919E77E2F3CA4D3865CEF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8F5AB4640E5586BF93276AB1 /* HomeScreenOptimizeriOS */;
+			targetProxy = C8F6644C3A5C36E5335BDEE0 /* PBXContainerItemProxy */;
 		};
 		EC520A45584D55A9F91DA635 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -353,6 +410,23 @@
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HomeScreenOptimizeriOS.app/HomeScreenOptimizeriOS";
+			};
+			name = Release;
+		};
+		783DE22220AC8338013A8FFB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.davidroh.HomeScreenOptimizeriOSUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = HomeScreenOptimizeriOS;
 			};
 			name = Release;
 		};
@@ -438,6 +512,23 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		9B12873CCE4B43399D508352 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.davidroh.HomeScreenOptimizeriOSUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = HomeScreenOptimizeriOS;
 			};
 			name = Debug;
 		};
@@ -564,6 +655,15 @@
 			buildConfigurations = (
 				8468A128C73063D3CE5D6D1B /* Debug */,
 				FB36D42784BC4EFC67F6333B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		435363BA5C32F9C5A9B204A3 /* Build configuration list for PBXNativeTarget "HomeScreenOptimizeriOSUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9B12873CCE4B43399D508352 /* Debug */,
+				783DE22220AC8338013A8FFB /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

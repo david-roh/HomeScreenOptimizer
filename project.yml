@@ -91,6 +91,18 @@ targets:
     dependencies:
       - target: HomeScreenOptimizeriOS
 
+  HomeScreenOptimizeriOSUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    hostApplication: HomeScreenOptimizeriOS
+    sources:
+      - App/UITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: true
+    dependencies:
+      - target: HomeScreenOptimizeriOS
+
 schemes:
   HomeScreenOptimizeriOS:
     build:
@@ -99,5 +111,6 @@ schemes:
     test:
       targets:
         - HomeScreenOptimizeriOSTests
+        - HomeScreenOptimizeriOSUITests
     run:
       config: Debug
