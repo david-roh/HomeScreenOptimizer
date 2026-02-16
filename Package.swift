@@ -30,6 +30,7 @@ let package = Package(
         .executableTarget(name: "HSOPrototype", dependencies: ["Core", "Ingestion", "Profiles", "Optimizer", "Simulation", "Guide", "Privacy", "Usage"]),
         .testTarget(name: "CoreTests", dependencies: ["Core"]),
         .testTarget(name: "IngestionTests", dependencies: ["Ingestion", "Core"]),
-        .testTarget(name: "ProfilesTests", dependencies: ["Profiles", "Core"])
+        .testTarget(name: "ProfilesTests", dependencies: ["Profiles", "Core"]),
+        .testTarget(name: "OptimizerTests", dependencies: ["Optimizer", "Core"])
     ]
 )

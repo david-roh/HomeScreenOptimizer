@@ -1,8 +1,11 @@
 import Core
 import Foundation
+import Guide
 import Ingestion
+import Optimizer
 import PhotosUI
 import Profiles
+import Simulation
 import SwiftUI
 
 struct RootView: View {
@@ -24,6 +27,7 @@ struct RootView: View {
                 calibrationSection
                 profileListSection
                 importSection
+                recommendationSection
             }
             .navigationTitle("HomeScreenOptimizer")
             .onAppear {
@@ -86,10 +90,22 @@ struct RootView: View {
                 Text("No saved profiles yet")
                     .foregroundStyle(.secondary)
             } else {
+                Picker("Active profile", selection: $model.selectedProfileID) {
+                    ForEach(model.savedProfiles) { profile in
+                        Text(profile.name).tag(Optional(profile.id))
+                    }
+                }
+
                 ForEach(model.savedProfiles) { profile in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(profile.name)
-                            .font(.headline)
+                        HStack {
+                            Text(profile.name)
+                                .font(.headline)
+                            if model.selectedProfileID == profile.id {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                            }
+                        }
                         Text("\(profile.context.displayTitle) • \(profile.handedness.displayTitle) • \(profile.gripMode.displayTitle)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -119,19 +135,17 @@ struct RootView: View {
             }
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 8) {
-                ForEach(0..<6, id: \.self) { row in
-                    ForEach(0..<4, id: \.self) { column in
-                        Button {
-                            model.handleCalibrationTap(row: row, column: column)
-                        } label: {
-                            Text("\(row + 1),\(column + 1)")
-                                .font(.caption2)
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(model.calibrationButtonTint(row: row, column: column))
-                        .disabled(!model.calibrationInProgress)
+                ForEach(calibrationCoordinates, id: \.id) { coordinate in
+                    Button {
+                        model.handleCalibrationTap(row: coordinate.row, column: coordinate.column)
+                    } label: {
+                        Text("\(coordinate.row + 1),\(coordinate.column + 1)")
+                            .font(.caption2)
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(model.calibrationButtonTint(row: coordinate.row, column: coordinate.column))
+                    .disabled(!model.calibrationInProgress)
                 }
             }
 
@@ -164,6 +178,13 @@ struct RootView: View {
                 Button("Analyze Latest Screenshot (OCR)") {
                     Task {
                         await model.analyzeLatestScreenshot()
+                    }
+                }
+                .disabled(session.pages.isEmpty)
+
+                Button("Analyze All Screenshots (OCR)") {
+                    Task {
+                        await model.analyzeAllScreenshots()
                     }
                 }
                 .disabled(session.pages.isEmpty)
@@ -245,6 +266,86 @@ struct RootView: View {
         }
     }
 
+    private var recommendationSection: some View {
+        Section("Recommendation Guide") {
+            if model.detectedSlots.isEmpty {
+                Text("Import and analyze screenshots to generate a layout plan.")
+                    .foregroundStyle(.secondary)
+            } else {
+                if let activeProfileName = model.activeProfileName {
+                    Text("Active profile: \(activeProfileName)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Save/select a profile to generate a recommendation.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button("Generate Rearrangement Guide") {
+                    model.generateRecommendationGuide()
+                }
+                .disabled(model.selectedProfileID == nil || model.detectedSlots.isEmpty)
+
+                if let summary = model.simulationSummary {
+                    Text("Score delta: \(String(format: "%+.3f", summary.aggregateScoreDelta))")
+                        .font(.subheadline)
+                    Text("Estimated moves: \(summary.moveCount)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !model.currentLayoutAssignments.isEmpty {
+                    Text("Current layout")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(Array(model.currentLayoutAssignments.prefix(8).enumerated()), id: \.offset) { _, assignment in
+                        HStack {
+                            Text(model.displayName(for: assignment.appID))
+                            Spacer()
+                            Text(slotLabel(assignment.slot))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if !model.recommendedLayoutAssignments.isEmpty {
+                    Text("Recommended layout")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(Array(model.recommendedLayoutAssignments.prefix(8).enumerated()), id: \.offset) { _, assignment in
+                        HStack {
+                            Text(model.displayName(for: assignment.appID))
+                            Spacer()
+                            Text(slotLabel(assignment.slot))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if !model.moveSteps.isEmpty {
+                    Text("Manual move sequence")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(Array(model.moveSteps.prefix(12).enumerated()), id: \.offset) { index, step in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(index + 1). Move \(model.displayName(for: step.appID))")
+                                .font(.subheadline)
+                            Text("\(slotLabel(step.fromSlot)) → \(slotLabel(step.toSlot))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private func weightSlider(title: String, value: Binding<Double>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -255,6 +356,18 @@ struct RootView: View {
                     .monospacedDigit()
             }
             Slider(value: value, in: 0...1)
+        }
+    }
+
+    private func slotLabel(_ slot: Slot) -> String {
+        "P\(slot.page + 1) R\(slot.row + 1) C\(slot.column + 1)"
+    }
+
+    private var calibrationCoordinates: [(row: Int, column: Int, id: String)] {
+        (0..<6).flatMap { row in
+            (0..<4).map { column in
+                (row: row, column: column, id: "\(row)-\(column)")
+            }
         }
     }
 }
@@ -272,6 +385,7 @@ final class RootViewModel: ObservableObject {
     @Published var moveCostWeight = GoalWeights.default.moveCost
 
     @Published var savedProfiles: [Profile] = []
+    @Published var selectedProfileID: UUID?
     @Published var importSession: ScreenshotImportSession?
     @Published var statusMessage = ""
     @Published var statusLevel: StatusLevel = .info
@@ -282,6 +396,10 @@ final class RootViewModel: ObservableObject {
     @Published var calibrationCurrentTarget: Slot?
     @Published var calibrationProgressLabel = "0/0"
     @Published var lastCalibrationMap = ReachabilityMap()
+    @Published var currentLayoutAssignments: [LayoutAssignment] = []
+    @Published var recommendedLayoutAssignments: [LayoutAssignment] = []
+    @Published var moveSteps: [MoveStep] = []
+    @Published var simulationSummary: SimulationSummary?
 
     private let profileBuilder = OnboardingProfileBuilder()
     private let profileRepository: FileProfileRepository
@@ -290,9 +408,13 @@ final class RootViewModel: ObservableObject {
     private let ocrPostProcessor = OCRPostProcessor()
     private let gridMapper = HomeScreenGridMapper()
     private let reachabilityCalibrator = ReachabilityCalibrator()
+    private let layoutPlanner = ReachabilityAwareLayoutPlanner()
+    private let movePlanBuilder = MovePlanBuilder()
+    private let whatIfSimulation = WhatIfSimulation()
     private var calibrationTargets: [Slot] = []
     private var calibrationStartAt: Date?
     private var calibrationSamples: [CalibrationSample] = []
+    private var appNamesByID: [UUID: String] = [:]
 
     init(ocrExtractor: any LayoutOCRExtracting = VisionLayoutOCRExtractor()) {
         self.ocrExtractor = ocrExtractor
@@ -315,9 +437,24 @@ final class RootViewModel: ObservableObject {
         (utilityWeight + flowWeight + aestheticsWeight + moveCostWeight) > 0.0001
     }
 
+    var activeProfileName: String? {
+        guard let selectedProfileID else {
+            return nil
+        }
+
+        return savedProfiles.first { $0.id == selectedProfileID }?.name
+    }
+
+    func displayName(for appID: UUID) -> String {
+        appNamesByID[appID] ?? "Unknown App"
+    }
+
     func loadProfiles() {
         do {
             savedProfiles = try profileRepository.fetchAll()
+            if selectedProfileID == nil || !savedProfiles.contains(where: { $0.id == selectedProfileID }) {
+                selectedProfileID = savedProfiles.first?.id
+            }
         } catch {
             showStatus("Failed to load profiles: \(error.localizedDescription)", level: .error)
         }
@@ -350,6 +487,7 @@ final class RootViewModel: ObservableObject {
         do {
             try profileRepository.upsert(profile)
             loadProfiles()
+            selectedProfileID = profile.id
             showStatus("Saved profile \"\(profile.name)\".", level: .success)
         } catch {
             showStatus("Failed to save profile: \(error.localizedDescription)", level: .error)
@@ -362,6 +500,7 @@ final class RootViewModel: ObservableObject {
             ocrCandidates = []
             ocrQuality = .low
             detectedSlots = []
+            resetRecommendationOutput()
             showStatus("Import session ready.", level: .success)
         } catch {
             showStatus("Failed to create session: \(error.localizedDescription)", level: .error)
@@ -398,6 +537,7 @@ final class RootViewModel: ObservableObject {
             ocrCandidates = []
             ocrQuality = .low
             detectedSlots = []
+            resetRecommendationOutput()
             showStatus("Removed screenshot.", level: .success)
         } catch {
             showStatus("Failed to remove screenshot: \(error.localizedDescription)", level: .error)
@@ -434,24 +574,112 @@ final class RootViewModel: ObservableObject {
             return
         }
 
-        do {
-            let extracted = try await ocrExtractor.extractAppLabels(from: latestPage.filePath)
-            ocrCandidates = extracted
-            ocrQuality = ocrPostProcessor.estimateImportQuality(from: extracted)
+        await analyzeScreenshots([latestPage])
+    }
 
-            if let locatingExtractor = ocrExtractor as? any LayoutOCRLocating {
-                let located = try await locatingExtractor.extractLocatedAppLabels(from: latestPage.filePath)
-                let mapped = gridMapper.map(locatedCandidates: located, page: latestPage.pageIndex)
-                detectedSlots = mapped.apps
-            } else {
-                detectedSlots = []
+    func analyzeAllScreenshots() async {
+        guard let pages = importSession?.pages, !pages.isEmpty else {
+            showStatus("Add at least one screenshot before analysis.", level: .error)
+            return
+        }
+
+        await analyzeScreenshots(pages.sorted { $0.pageIndex < $1.pageIndex })
+    }
+
+    func generateRecommendationGuide() {
+        guard let profile = activeProfile() else {
+            showStatus("Select a saved profile first.", level: .error)
+            return
+        }
+
+        guard !detectedSlots.isEmpty else {
+            showStatus("Analyze screenshots before generating a guide.", level: .error)
+            return
+        }
+
+        let sortedDetectedSlots = detectedSlots.sorted { lhs, rhs in
+            if lhs.slot.page != rhs.slot.page {
+                return lhs.slot.page < rhs.slot.page
+            }
+            if lhs.slot.row != rhs.slot.row {
+                return lhs.slot.row < rhs.slot.row
             }
 
-            if extracted.isEmpty {
+            return lhs.slot.column < rhs.slot.column
+        }
+
+        var apps: [AppItem] = []
+        var assignments: [LayoutAssignment] = []
+        var appNames: [UUID: String] = [:]
+
+        for detected in sortedDetectedSlots {
+            let app = AppItem(displayName: detected.appName, usageScore: max(0.05, detected.confidence))
+            apps.append(app)
+            assignments.append(LayoutAssignment(appID: app.id, slot: detected.slot))
+            appNames[app.id] = app.displayName
+        }
+
+        let generated = layoutPlanner.generate(
+            profile: profile,
+            apps: apps,
+            currentAssignments: assignments
+        )
+        let planMoves = movePlanBuilder.buildMoves(
+            current: assignments,
+            target: generated.recommendedPlan.assignments
+        )
+        let simulation = whatIfSimulation.compare(
+            currentScore: generated.currentScore,
+            candidateScore: generated.recommendedPlan.scoreBreakdown,
+            moveCount: planMoves.count
+        )
+
+        currentLayoutAssignments = assignments
+        recommendedLayoutAssignments = generated.recommendedPlan.assignments
+        moveSteps = planMoves
+        simulationSummary = simulation
+        appNamesByID = appNames
+
+        showStatus("Generated guide with \(planMoves.count) moves.", level: .success)
+    }
+
+    private func analyzeScreenshots(_ pages: [ScreenshotPage]) async {
+        resetRecommendationOutput()
+
+        do {
+            var mergedCandidates: [OCRLabelCandidate] = []
+            var mergedDetectedSlots: [DetectedAppSlot] = []
+            let locatingExtractor = ocrExtractor as? any LayoutOCRLocating
+
+            for page in pages {
+                let extracted = try await ocrExtractor.extractAppLabels(from: page.filePath)
+                mergedCandidates.append(contentsOf: extracted)
+
+                if let locatingExtractor {
+                    let located = try await locatingExtractor.extractLocatedAppLabels(from: page.filePath)
+                    let mapped = gridMapper.map(locatedCandidates: located, page: page.pageIndex)
+                    mergedDetectedSlots.append(contentsOf: mapped.apps)
+                }
+            }
+
+            ocrCandidates = ocrPostProcessor.process(mergedCandidates)
+            ocrQuality = ocrPostProcessor.estimateImportQuality(from: ocrCandidates)
+            detectedSlots = mergedDetectedSlots
+                .sorted { lhs, rhs in
+                    if lhs.slot.page != rhs.slot.page {
+                        return lhs.slot.page < rhs.slot.page
+                    }
+                    if lhs.slot.row != rhs.slot.row {
+                        return lhs.slot.row < rhs.slot.row
+                    }
+                    return lhs.slot.column < rhs.slot.column
+                }
+
+            if ocrCandidates.isEmpty {
                 showStatus("No likely app labels detected.", level: .info)
             } else {
                 showStatus(
-                    "Extracted \(extracted.count) app labels and mapped \(detectedSlots.count) slots.",
+                    "Extracted \(ocrCandidates.count) app labels and mapped \(detectedSlots.count) slots.",
                     level: .success
                 )
             }
@@ -536,6 +764,22 @@ final class RootViewModel: ObservableObject {
         }
 
         return .gray
+    }
+
+    private func activeProfile() -> Profile? {
+        guard let selectedProfileID else {
+            return nil
+        }
+
+        return savedProfiles.first { $0.id == selectedProfileID }
+    }
+
+    private func resetRecommendationOutput() {
+        currentLayoutAssignments = []
+        recommendedLayoutAssignments = []
+        moveSteps = []
+        simulationSummary = nil
+        appNamesByID = [:]
     }
 
     private func writeImageToTemporaryFile(data: Data) throws -> URL {

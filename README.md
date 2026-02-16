@@ -6,7 +6,9 @@ This repository contains the MVP foundation for an iOS home-screen layout optimi
 - Modular Swift Package architecture.
 - Core domain models and persistence repositories.
 - Screenshot import session pipeline (domain layer).
-- Onboarding profile builder and weight normalization.
+- OCR extraction + post-processing + grid slot mapping for imported screenshots.
+- Onboarding profile builder, goal weighting, and reachability calibration mini-test.
+- Reachability-aware layout planner with generated manual move guide.
 - iOS SwiftUI shell app target with simulator support.
 - CI workflow with build and tests.
 
