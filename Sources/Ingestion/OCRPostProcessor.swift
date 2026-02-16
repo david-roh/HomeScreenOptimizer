@@ -15,13 +15,11 @@ public struct OCRPostProcessor: Sendable {
         var bestByKey: [String: OCRLabelCandidate] = [:]
 
         for candidate in candidates {
-            let cleaned = normalizeDisplayText(candidate.text)
-            guard isLikelyAppLabel(cleaned) else {
+            guard let normalizedCandidate = normalize(candidate) else {
                 continue
             }
 
-            let key = cleaned.lowercased()
-            let normalizedCandidate = OCRLabelCandidate(text: cleaned, confidence: candidate.confidence)
+            let key = normalizedCandidate.text.lowercased()
 
             if let existing = bestByKey[key], existing.confidence >= normalizedCandidate.confidence {
                 continue
@@ -37,6 +35,15 @@ public struct OCRPostProcessor: Sendable {
 
             return lhs.confidence > rhs.confidence
         }
+    }
+
+    public func normalize(_ candidate: OCRLabelCandidate) -> OCRLabelCandidate? {
+        let cleaned = normalizeDisplayText(candidate.text)
+        guard isLikelyAppLabel(cleaned) else {
+            return nil
+        }
+
+        return OCRLabelCandidate(text: cleaned, confidence: candidate.confidence)
     }
 
     public func estimateImportQuality(from candidates: [OCRLabelCandidate]) -> ImportQuality {

@@ -140,6 +140,22 @@ struct RootView: View {
                     }
                 }
 
+                if !model.detectedSlots.isEmpty {
+                    Text("Detected layout slots")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(Array(model.detectedSlots.prefix(10).enumerated()), id: \.offset) { _, slot in
+                        HStack {
+                            Text(slot.appName)
+                            Spacer()
+                            Text("P\(slot.slot.page + 1) R\(slot.slot.row + 1) C\(slot.slot.column + 1)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 ForEach(session.pages) { page in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -216,12 +232,14 @@ final class RootViewModel: ObservableObject {
     @Published var statusLevel: StatusLevel = .info
     @Published var ocrCandidates: [OCRLabelCandidate] = []
     @Published var ocrQuality: ImportQuality = .low
+    @Published var detectedSlots: [DetectedAppSlot] = []
 
     private let profileBuilder = OnboardingProfileBuilder()
     private let profileRepository: FileProfileRepository
     private let importCoordinator: ScreenshotImportCoordinator
     private let ocrExtractor: any LayoutOCRExtracting
     private let ocrPostProcessor = OCRPostProcessor()
+    private let gridMapper = HomeScreenGridMapper()
 
     init(ocrExtractor: any LayoutOCRExtracting = VisionLayoutOCRExtractor()) {
         self.ocrExtractor = ocrExtractor
@@ -287,6 +305,7 @@ final class RootViewModel: ObservableObject {
             importSession = try importCoordinator.startSession()
             ocrCandidates = []
             ocrQuality = .low
+            detectedSlots = []
             showStatus("Import session ready.", level: .success)
         } catch {
             showStatus("Failed to create session: \(error.localizedDescription)", level: .error)
@@ -322,6 +341,7 @@ final class RootViewModel: ObservableObject {
             importSession = try importCoordinator.removePage(sessionID: session.id, pageID: pageID)
             ocrCandidates = []
             ocrQuality = .low
+            detectedSlots = []
             showStatus("Removed screenshot.", level: .success)
         } catch {
             showStatus("Failed to remove screenshot: \(error.localizedDescription)", level: .error)
@@ -363,10 +383,21 @@ final class RootViewModel: ObservableObject {
             ocrCandidates = extracted
             ocrQuality = ocrPostProcessor.estimateImportQuality(from: extracted)
 
+            if let locatingExtractor = ocrExtractor as? any LayoutOCRLocating {
+                let located = try await locatingExtractor.extractLocatedAppLabels(from: latestPage.filePath)
+                let mapped = gridMapper.map(locatedCandidates: located, page: latestPage.pageIndex)
+                detectedSlots = mapped.apps
+            } else {
+                detectedSlots = []
+            }
+
             if extracted.isEmpty {
                 showStatus("No likely app labels detected.", level: .info)
             } else {
-                showStatus("Extracted \(extracted.count) app label candidates.", level: .success)
+                showStatus(
+                    "Extracted \(extracted.count) app labels and mapped \(detectedSlots.count) slots.",
+                    level: .success
+                )
             }
         } catch {
             showStatus("OCR failed: \(error.localizedDescription)", level: .error)

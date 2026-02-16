@@ -15,8 +15,26 @@ public struct OCRLabelCandidate: Codable, Hashable, Sendable {
     }
 }
 
+public struct LocatedOCRLabelCandidate: Codable, Hashable, Sendable {
+    public var text: String
+    public var confidence: Double
+    public var centerX: Double
+    public var centerY: Double
+
+    public init(text: String, confidence: Double, centerX: Double, centerY: Double) {
+        self.text = text
+        self.confidence = confidence
+        self.centerX = centerX
+        self.centerY = centerY
+    }
+}
+
 public protocol LayoutOCRExtracting: Sendable {
     func extractAppLabels(from screenshotPath: String) async throws -> [OCRLabelCandidate]
+}
+
+public protocol LayoutOCRLocating: Sendable {
+    func extractLocatedAppLabels(from screenshotPath: String) async throws -> [LocatedOCRLabelCandidate]
 }
 
 public enum OCRExtractionError: Error, LocalizedError {
@@ -33,7 +51,7 @@ public enum OCRExtractionError: Error, LocalizedError {
     }
 }
 
-public struct VisionLayoutOCRExtractor: LayoutOCRExtracting {
+public struct VisionLayoutOCRExtractor: LayoutOCRExtracting, LayoutOCRLocating {
     private let postProcessor: OCRPostProcessor
 
     public init(postProcessor: OCRPostProcessor = OCRPostProcessor()) {
@@ -41,6 +59,11 @@ public struct VisionLayoutOCRExtractor: LayoutOCRExtracting {
     }
 
     public func extractAppLabels(from screenshotPath: String) async throws -> [OCRLabelCandidate] {
+        let located = try await extractLocatedAppLabels(from: screenshotPath)
+        return located.map { OCRLabelCandidate(text: $0.text, confidence: $0.confidence) }
+    }
+
+    public func extractLocatedAppLabels(from screenshotPath: String) async throws -> [LocatedOCRLabelCandidate] {
         #if canImport(CoreGraphics) && canImport(ImageIO) && canImport(Vision)
         let url = URL(fileURLWithPath: screenshotPath)
         guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -56,20 +79,47 @@ public struct VisionLayoutOCRExtractor: LayoutOCRExtracting {
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         try handler.perform([request])
 
-        let rawCandidates = (request.results ?? []).compactMap { observation -> OCRLabelCandidate? in
+        var bestByText: [String: LocatedOCRLabelCandidate] = [:]
+
+        for observation in request.results ?? [] {
             guard let top = observation.topCandidates(1).first else {
-                return nil
+                continue
             }
 
             let cleaned = top.string.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !cleaned.isEmpty else {
-                return nil
+                continue
             }
 
-            return OCRLabelCandidate(text: cleaned, confidence: Double(top.confidence))
+            let rawCandidate = OCRLabelCandidate(text: cleaned, confidence: Double(top.confidence))
+            guard let normalized = postProcessor.normalize(rawCandidate) else {
+                continue
+            }
+
+            let centerX = Double(observation.boundingBox.midX)
+            let centerY = Double(observation.boundingBox.midY)
+            let located = LocatedOCRLabelCandidate(
+                text: normalized.text,
+                confidence: normalized.confidence,
+                centerX: centerX,
+                centerY: centerY
+            )
+
+            let key = normalized.text.lowercased()
+            if let existing = bestByText[key], existing.confidence >= located.confidence {
+                continue
+            }
+
+            bestByText[key] = located
         }
 
-        return postProcessor.process(rawCandidates)
+        return bestByText.values.sorted { lhs, rhs in
+            if lhs.confidence == rhs.confidence {
+                return lhs.text < rhs.text
+            }
+
+            return lhs.confidence > rhs.confidence
+        }
         #else
         _ = screenshotPath
         throw OCRExtractionError.visionUnavailable
@@ -77,10 +127,15 @@ public struct VisionLayoutOCRExtractor: LayoutOCRExtracting {
     }
 }
 
-public struct StubLayoutOCRExtractor: LayoutOCRExtracting {
+public struct StubLayoutOCRExtractor: LayoutOCRExtracting, LayoutOCRLocating {
     public init() {}
 
     public func extractAppLabels(from screenshotPath: String) async throws -> [OCRLabelCandidate] {
+        _ = screenshotPath
+        return []
+    }
+
+    public func extractLocatedAppLabels(from screenshotPath: String) async throws -> [LocatedOCRLabelCandidate] {
         _ = screenshotPath
         return []
     }
