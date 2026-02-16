@@ -5,11 +5,27 @@ public struct DetectedAppSlot: Codable, Hashable, Sendable {
     public var appName: String
     public var confidence: Double
     public var slot: Slot
+    public var labelCenterX: Double?
+    public var labelCenterY: Double?
+    public var labelBoxWidth: Double?
+    public var labelBoxHeight: Double?
 
-    public init(appName: String, confidence: Double, slot: Slot) {
+    public init(
+        appName: String,
+        confidence: Double,
+        slot: Slot,
+        labelCenterX: Double? = nil,
+        labelCenterY: Double? = nil,
+        labelBoxWidth: Double? = nil,
+        labelBoxHeight: Double? = nil
+    ) {
         self.appName = appName
         self.confidence = confidence
         self.slot = slot
+        self.labelCenterX = labelCenterX
+        self.labelCenterY = labelCenterY
+        self.labelBoxWidth = labelBoxWidth
+        self.labelBoxHeight = labelBoxHeight
     }
 }
 
@@ -32,6 +48,7 @@ public struct HomeScreenGridMapper: Sendable {
     public init(
         ignoredExactTerms: Set<String> = [
             "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+            "sun", "mon", "tue", "wed", "thu", "fri", "sat",
             "today", "tomorrow", "yesterday", "no events today", "no events",
             "search", "edit", "done", "cancel"
         ],
@@ -67,7 +84,15 @@ public struct HomeScreenGridMapper: Sendable {
             let column = min(columns - 1, max(0, Int(x * Double(columns))))
             let slot = Slot(page: page, row: rowFromTop, column: column)
 
-            let mapped = DetectedAppSlot(appName: candidate.text, confidence: candidate.confidence, slot: slot)
+            let mapped = DetectedAppSlot(
+                appName: candidate.text,
+                confidence: candidate.confidence,
+                slot: slot,
+                labelCenterX: candidate.centerX,
+                labelCenterY: candidate.centerY,
+                labelBoxWidth: candidate.boxWidth > 0 ? candidate.boxWidth : nil,
+                labelBoxHeight: candidate.boxHeight > 0 ? candidate.boxHeight : nil
+            )
             let candidateScore = slotLabelFitnessScore(candidate, row: rowFromTop, rows: rows)
             if let existing = bestBySlot[slot], existing.score >= candidateScore {
                 continue

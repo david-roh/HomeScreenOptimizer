@@ -58,6 +58,7 @@ struct RootView: View {
     @State private var showTuneSheet = false
     @State private var showManualUsageEditor = false
     @State private var showMappingEditor = false
+    @State private var showStyleDetailSheet = false
     @State private var showPageList = false
     @State private var showLayoutPreview = false
     @State private var showAllMoves = false
@@ -161,13 +162,52 @@ struct RootView: View {
         var shortDescription: String {
             switch self {
             case .balanced:
-                return "Balanced utility + aesthetics"
+                return "General purpose"
             case .reachFirst:
-                return "Prioritizes easy thumb access"
+                return "Fast thumb access"
             case .visualHarmony:
-                return "Prioritizes coherent visual layout"
+                return "Pattern-first layout"
             case .minimalDisruption:
-                return "Minimizes icon movement"
+                return "Minimal movement"
+            }
+        }
+
+        var iconName: String {
+            switch self {
+            case .balanced:
+                return "square.grid.2x2"
+            case .reachFirst:
+                return "hand.tap"
+            case .visualHarmony:
+                return "paintpalette"
+            case .minimalDisruption:
+                return "lock.shield"
+            }
+        }
+
+        var bestFor: String {
+            switch self {
+            case .balanced:
+                return "mixed priorities and daily reliability"
+            case .reachFirst:
+                return "one-hand speed and reduced thumb stretch"
+            case .visualHarmony:
+                return "color/pattern consistency with acceptable movement"
+            case .minimalDisruption:
+                return "small edits to an already familiar layout"
+            }
+        }
+
+        var tradeoff: String {
+            switch self {
+            case .balanced:
+                return "does not maximize any single metric"
+            case .reachFirst:
+                return "can move more icons than stable mode"
+            case .visualHarmony:
+                return "may place lower-usage apps in premium spots"
+            case .minimalDisruption:
+                return "can leave high-usage apps in harder zones"
             }
         }
 
@@ -316,6 +356,9 @@ struct RootView: View {
         }
         .sheet(isPresented: $showMappingEditor) {
             mappingEditorSheet
+        }
+        .sheet(isPresented: $showStyleDetailSheet) {
+            styleDetailSheet
         }
         .onAppear {
             model.loadProfiles()
@@ -589,25 +632,25 @@ struct RootView: View {
                 }
             }
 
-            pickerRow(title: "Style", icon: "wand.and.stars", selection: $selectedPreset) {
-                ForEach(OptimizationPreset.allCases) { preset in
-                    Text("\(preset.title) · \(preset.shortDescription)").tag(preset)
-                }
-            }
-            .onChange(of: selectedPreset) { _, preset in
-                applyPreset(preset)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(selectedPreset.shortDescription)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Optimization Style")
                     .font(.subheadline.weight(.semibold))
-                Text(selectedPreset.engineDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(OptimizationPreset.allCases) { preset in
+                        stylePresetCard(preset)
+                    }
+                }
+
+                Button {
+                    showStyleDetailSheet = true
+                } label: {
+                    Label("How \(selectedPreset.title) works", systemImage: "info.circle")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Tab.setup.accent)
             }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             if selectedPreset == .visualHarmony {
                 pickerRow(title: "Visual Pattern", icon: "paintpalette", selection: $selectedVisualPattern) {
@@ -1297,6 +1340,99 @@ struct RootView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(Color(.tertiarySystemFill), in: Capsule())
+    }
+
+    private func stylePresetCard(_ preset: OptimizationPreset) -> some View {
+        let isSelected = selectedPreset == preset
+
+        return Button {
+            applyPreset(preset)
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                Label(preset.title, systemImage: preset.iconName)
+                    .font(.subheadline.weight(.semibold))
+                Text(preset.shortDescription)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(
+                isSelected ? Tab.setup.accent.opacity(0.16) : Color(.tertiarySystemFill),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isSelected ? Tab.setup.accent : .clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var styleDetailSheet: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Label(selectedPreset.title, systemImage: selectedPreset.iconName)
+                    .font(.title3.weight(.bold))
+
+                Text(selectedPreset.engineDescription)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                VStack(spacing: 8) {
+                    styleWeightRow(title: "Utility", value: selectedPreset.weights.utility)
+                    styleWeightRow(title: "Flow", value: selectedPreset.weights.flow)
+                    styleWeightRow(title: "Aesthetics", value: selectedPreset.weights.aesthetics)
+                    styleWeightRow(title: "Move Cost", value: selectedPreset.weights.moveCost)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Best for: \(selectedPreset.bestFor)")
+                        .font(.subheadline)
+                    Text("Tradeoff: \(selectedPreset.tradeoff)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+            .padding(20)
+            .navigationTitle("Style Details")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        showStyleDetailSheet = false
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func styleWeightRow(title: String, value: Double) -> some View {
+        VStack(spacing: 4) {
+            HStack {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(String(format: "%.2f", value))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color(.tertiarySystemFill))
+                    Capsule()
+                        .fill(Tab.setup.accent.opacity(0.85))
+                        .frame(width: geometry.size.width * max(0, min(value, 1)))
+                }
+            }
+            .frame(height: 8)
+        }
     }
 
     private func weightRow(title: String, detail: String, value: Binding<Double>, accent: Color) -> some View {
@@ -3068,28 +3204,92 @@ final class RootViewModel: ObservableObject {
             let height = CGFloat(cgImage.height)
             let cellWidth = width / CGFloat(columns)
             let cellHeight = height / CGFloat(rows)
-            let rowFromTop = max(0, min(rows - 1, rows - 1 - detected.slot.row))
-
-            let rawRect = CGRect(
-                x: CGFloat(detected.slot.column) * cellWidth + (cellWidth * 0.14),
-                y: CGFloat(rowFromTop) * cellHeight + (cellHeight * 0.06),
-                width: cellWidth * 0.72,
-                height: cellHeight * 0.62
-            )
             let imageBounds = CGRect(x: 0, y: 0, width: width, height: height)
-            let cropRect = rawRect.integral.intersection(imageBounds)
-            guard !cropRect.isNull, cropRect.width > 1, cropRect.height > 1,
-                  let crop = cgImage.cropping(to: cropRect) else {
-                continue
-            }
 
-            let previewImage = UIImage(cgImage: crop)
-            if let data = previewImage.pngData() {
-                previews[detected.slot] = data
+            let candidateRects: [CGRect] = [
+                iconCropRectFromLabel(
+                    for: detected,
+                    imageWidth: width,
+                    imageHeight: height,
+                    cellWidth: cellWidth,
+                    cellHeight: cellHeight
+                ),
+                iconCropRectFromSlot(
+                    for: detected,
+                    cellWidth: cellWidth,
+                    cellHeight: cellHeight,
+                    rows: rows
+                )
+            ]
+            .compactMap { $0?.integral.intersection(imageBounds) }
+            .filter { !$0.isNull && $0.width > 1 && $0.height > 1 }
+
+            for cropRect in candidateRects {
+                guard let crop = cgImage.cropping(to: cropRect) else {
+                    continue
+                }
+
+                let previewImage = UIImage(cgImage: crop)
+                if let data = previewImage.pngData() {
+                    previews[detected.slot] = data
+                    break
+                }
             }
         }
 
         return previews
+    }
+
+    private func iconCropRectFromLabel(
+        for detected: DetectedAppSlot,
+        imageWidth: CGFloat,
+        imageHeight: CGFloat,
+        cellWidth: CGFloat,
+        cellHeight: CGFloat
+    ) -> CGRect? {
+        guard let centerXNorm = detected.labelCenterX,
+              let centerYNorm = detected.labelCenterY else {
+            return nil
+        }
+
+        let clampedX = min(max(centerXNorm, 0), 0.9999)
+        let clampedY = min(max(centerYNorm, 0), 0.9999)
+        let labelCenterX = CGFloat(clampedX) * imageWidth
+        let labelCenterYFromTop = CGFloat(1.0 - clampedY) * imageHeight
+
+        let labelWidth = max(CGFloat(detected.labelBoxWidth ?? 0) * imageWidth, cellWidth * 0.34)
+        let labelHeight = max(CGFloat(detected.labelBoxHeight ?? 0) * imageHeight, cellHeight * 0.11)
+
+        let minSide = min(cellWidth * 0.55, cellHeight * 0.48)
+        let maxSide = min(cellWidth * 0.92, cellHeight * 0.84)
+        let iconSide = max(minSide, min(maxSide, labelWidth * 1.25))
+        let iconCenterY = labelCenterYFromTop - (labelHeight * 0.72) - (iconSide * 0.52)
+
+        return CGRect(
+            x: labelCenterX - (iconSide / 2),
+            y: iconCenterY - (iconSide / 2),
+            width: iconSide,
+            height: iconSide
+        )
+    }
+
+    private func iconCropRectFromSlot(
+        for detected: DetectedAppSlot,
+        cellWidth: CGFloat,
+        cellHeight: CGFloat,
+        rows: Int
+    ) -> CGRect? {
+        guard rows > 0 else {
+            return nil
+        }
+
+        let rowFromTop = max(0, min(rows - 1, detected.slot.row))
+        return CGRect(
+            x: CGFloat(detected.slot.column) * cellWidth + (cellWidth * 0.14),
+            y: CGFloat(rowFromTop) * cellHeight + (cellHeight * 0.06),
+            width: cellWidth * 0.72,
+            height: cellHeight * 0.62
+        )
     }
 
     private func applyVisualPattern(

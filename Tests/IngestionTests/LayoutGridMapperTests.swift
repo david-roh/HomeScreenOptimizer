@@ -17,6 +17,8 @@ final class LayoutGridMapperTests: XCTestCase {
         let maps = detection.apps.first { $0.appName == "Maps" }
         XCTAssertEqual(maps?.slot.row, 0)
         XCTAssertEqual(maps?.slot.column, 0)
+        XCTAssertEqual(maps?.labelCenterX ?? 0, 0.10, accuracy: 0.0001)
+        XCTAssertEqual(maps?.labelCenterY ?? 0, 0.90, accuracy: 0.0001)
 
         let mail = detection.apps.first { $0.appName == "Mail" }
         XCTAssertEqual(mail?.slot.row, 0)
@@ -72,5 +74,32 @@ final class LayoutGridMapperTests: XCTestCase {
 
         XCTAssertEqual(detection.apps.count, 1)
         XCTAssertEqual(detection.apps.first?.appName, "Maps")
+    }
+
+    func testMapFiltersDayAbbreviationNoise() {
+        let mapper = HomeScreenGridMapper()
+        let input = [
+            LocatedOCRLabelCandidate(
+                text: "Sun",
+                confidence: 0.95,
+                centerX: 0.27,
+                centerY: 0.84,
+                boxWidth: 0.08,
+                boxHeight: 0.03
+            ),
+            LocatedOCRLabelCandidate(
+                text: "Health",
+                confidence: 0.87,
+                centerX: 0.50,
+                centerY: 0.72,
+                boxWidth: 0.11,
+                boxHeight: 0.03
+            )
+        ]
+
+        let detection = mapper.map(locatedCandidates: input, page: 0, rows: 6, columns: 4)
+
+        XCTAssertEqual(detection.apps.count, 1)
+        XCTAssertEqual(detection.apps.first?.appName, "Health")
     }
 }
