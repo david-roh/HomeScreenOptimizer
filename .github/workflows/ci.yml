@@ -51,41 +51,41 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY' >> "${GITHUB_OUTPUT}"
-import json
-import subprocess
-import sys
+          import json
+          import subprocess
+          import sys
 
-try:
-    output = subprocess.check_output(
-        ["xcrun", "simctl", "list", "-j", "devices", "available"],
-        text=True,
-        stderr=subprocess.STDOUT,
-        timeout=30
-    )
-except subprocess.TimeoutExpired:
-    print("Timed out while listing iOS simulator devices.", file=sys.stderr)
-    sys.exit(1)
-except subprocess.CalledProcessError as error:
-    print("Failed to list iOS simulator devices.", file=sys.stderr)
-    print(error.output, file=sys.stderr)
-    sys.exit(error.returncode)
+          try:
+              output = subprocess.check_output(
+                  ["xcrun", "simctl", "list", "-j", "devices", "available"],
+                  text=True,
+                  stderr=subprocess.STDOUT,
+                  timeout=30
+              )
+          except subprocess.TimeoutExpired:
+              print("Timed out while listing iOS simulator devices.", file=sys.stderr)
+              sys.exit(1)
+          except subprocess.CalledProcessError as error:
+              print("Failed to list iOS simulator devices.", file=sys.stderr)
+              print(error.output, file=sys.stderr)
+              sys.exit(error.returncode)
 
-try:
-    payload = json.loads(output)
-except json.JSONDecodeError as error:
-    print(f"simctl returned non-JSON output: {error}", file=sys.stderr)
-    print(output, file=sys.stderr)
-    sys.exit(1)
+          try:
+              payload = json.loads(output)
+          except json.JSONDecodeError as error:
+              print(f"simctl returned non-JSON output: {error}", file=sys.stderr)
+              print(output, file=sys.stderr)
+              sys.exit(1)
 
-for runtime in payload.get("devices", {}).values():
-    for device in runtime:
-        if device.get("isAvailable") and device.get("name", "").startswith("iPhone"):
-            print(f"destination=platform=iOS Simulator,id={device['udid']}")
-            sys.exit(0)
+          for runtime in payload.get("devices", {}).values():
+              for device in runtime:
+                  if device.get("isAvailable") and device.get("name", "").startswith("iPhone"):
+                      print(f"destination=platform=iOS Simulator,id={device['udid']}")
+                      sys.exit(0)
 
-print("No available iPhone simulator destination found on runner.", file=sys.stderr)
-sys.exit(1)
-PY
+          print("No available iPhone simulator destination found on runner.", file=sys.stderr)
+          sys.exit(1)
+          PY
       - name: Run iOS tests (unit + UI)
         run: |
           set -euo pipefail
