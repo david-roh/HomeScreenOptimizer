@@ -50,14 +50,12 @@ jobs:
         id: simulator
         run: |
           set -euo pipefail
-          SIM_ID="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ {print $2; exit}')"
+          SIM_ID="$(xcrun simctl list devices available iOS | awk -F '[()]' '/iPhone/ {print $2; exit}')"
           if [[ -z "${SIM_ID}" ]]; then
             echo "No available iPhone simulator found on runner."
             exit 1
           fi
           echo "simulator_id=${SIM_ID}" >> "${GITHUB_OUTPUT}"
-          xcrun simctl boot "${SIM_ID}" || true
-          xcrun simctl bootstatus "${SIM_ID}" -b
       - name: Run iOS tests (unit + UI)
         run: |
           set -euo pipefail
