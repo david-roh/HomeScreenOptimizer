@@ -53,6 +53,45 @@ struct RootView: View {
                 return "checklist"
             }
         }
+
+        var heroTitle: String {
+            switch self {
+            case .setup:
+                return "Define Your Grip Profile"
+            case .importData:
+                return "Capture Your Current Layout"
+            case .plan:
+                return "Generate A Practical Plan"
+            case .apply:
+                return "Execute Changes With Confidence"
+            }
+        }
+
+        var heroSubtitle: String {
+            switch self {
+            case .setup:
+                return "Set ergonomics and intent so optimization is personalized, not generic."
+            case .importData:
+                return "Import screenshots in order, fix OCR, and confirm slots before planning."
+            case .plan:
+                return "Blend Screen Time signal with your profile to output a high-value arrangement."
+            case .apply:
+                return "Follow a guided move sequence and track completion as you reorganize."
+            }
+        }
+
+        var accent: Color {
+            switch self {
+            case .setup:
+                return Color(red: 0.13, green: 0.45, blue: 0.94)
+            case .importData:
+                return Color(red: 0.14, green: 0.61, blue: 0.54)
+            case .plan:
+                return Color(red: 0.21, green: 0.49, blue: 0.86)
+            case .apply:
+                return Color(red: 0.23, green: 0.56, blue: 0.40)
+            }
+        }
     }
 
     var body: some View {
@@ -84,7 +123,10 @@ struct RootView: View {
             }
             .navigationTitle("HomeScreenOptimizer")
             .toolbarTitleDisplayMode(.inline)
+            .fontDesign(.rounded)
+            .animation(.spring(response: 0.34, dampingFraction: 0.86), value: selectedTab)
         }
+        .background(screenBackground.ignoresSafeArea())
         .onAppear {
             model.loadProfiles()
         }
@@ -113,19 +155,33 @@ struct RootView: View {
         }
     }
 
+    private var screenBackground: some View {
+        LinearGradient(
+            colors: [
+                Color(red: 0.95, green: 0.97, blue: 1.0),
+                Color(red: 0.93, green: 0.96, blue: 0.99),
+                Color(.systemGroupedBackground)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
     private var setupTab: some View {
         screenScroll {
+            workflowHero(for: .setup)
             if !model.statusMessage.isEmpty {
                 statusBanner
             }
             onboardingCard
-            calibrationCard
             profilesCard
+            calibrationCard
         }
     }
 
     private var importTab: some View {
         screenScroll {
+            workflowHero(for: .importData)
             if !model.statusMessage.isEmpty {
                 statusBanner
             }
@@ -136,6 +192,7 @@ struct RootView: View {
 
     private var planningTab: some View {
         screenScroll {
+            workflowHero(for: .plan)
             if !model.statusMessage.isEmpty {
                 statusBanner
             }
@@ -153,6 +210,7 @@ struct RootView: View {
 
     private var applyTab: some View {
         screenScroll {
+            workflowHero(for: .apply)
             if !model.statusMessage.isEmpty {
                 statusBanner
             }
@@ -160,64 +218,163 @@ struct RootView: View {
         }
     }
 
+    private func workflowHero(for tab: Tab) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(tab.title, systemImage: tab.icon)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.22), in: Capsule())
+
+                Spacer()
+
+                Text("Step \(tabStepIndex(tab))/\(Tab.allCases.count)")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.18), in: Capsule())
+            }
+
+            Text(tab.heroTitle)
+                .font(.system(.title3, design: .rounded).weight(.bold))
+
+            Text(tab.heroSubtitle)
+                .font(.footnote)
+                .foregroundStyle(Color.white.opacity(0.88))
+
+            HStack(spacing: 6) {
+                ForEach(Tab.allCases, id: \.self) { item in
+                    Capsule()
+                        .fill(item == tab ? Color.white : Color.white.opacity(0.35))
+                        .frame(height: 5)
+                }
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(16)
+        .background(
+            LinearGradient(
+                colors: [tab.accent, tab.accent.opacity(0.72)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
+        .shadow(color: tab.accent.opacity(0.28), radius: 14, x: 0, y: 8)
+    }
+
     private var statusBanner: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: model.statusLevel.iconName)
                 .foregroundStyle(model.statusLevel.tint)
+                .padding(6)
+                .background(model.statusLevel.tint.opacity(0.18), in: Circle())
+
             Text(model.statusMessage)
                 .font(.subheadline)
                 .foregroundStyle(.primary)
+
             Spacer(minLength: 0)
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(model.statusLevel.tint.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(model.statusLevel.tint.opacity(0.20), lineWidth: 1)
         )
     }
 
     private var onboardingCard: some View {
-        card(title: "Profile", subtitle: "Tune goals and ergonomics once, then reuse") {
+        card(title: "Profile Intent", subtitle: "Tell the optimizer how you hold and prioritize") {
             TextField("Profile name", text: $model.profileName)
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
                 .textFieldStyle(.roundedBorder)
 
-            Picker("Context", selection: $model.context) {
+            pickerRow(title: "Context", selection: $model.context) {
                 ForEach(ProfileContext.allCases, id: \.self) { context in
                     Text(context.displayTitle).tag(context)
                 }
             }
 
-            Picker("Handedness", selection: $model.handedness) {
+            pickerRow(title: "Handedness", selection: $model.handedness) {
                 ForEach(Handedness.allCases, id: \.self) { handedness in
                     Text(handedness.displayTitle).tag(handedness)
                 }
             }
 
-            Picker("Grip mode", selection: $model.gripMode) {
+            pickerRow(title: "Grip mode", selection: $model.gripMode) {
                 ForEach(GripMode.allCases, id: \.self) { gripMode in
                     Text(gripMode.displayTitle).tag(gripMode)
                 }
             }
 
             VStack(spacing: 10) {
-                weightSlider(title: "Utility", value: $model.utilityWeight)
-                weightSlider(title: "Flow", value: $model.flowWeight)
-                weightSlider(title: "Aesthetics", value: $model.aestheticsWeight)
-                weightSlider(title: "Move Cost", value: $model.moveCostWeight)
+                weightSlider(title: "Utility", value: $model.utilityWeight, accent: Tab.setup.accent)
+                weightSlider(title: "Flow", value: $model.flowWeight, accent: Tab.setup.accent)
+                weightSlider(title: "Aesthetics", value: $model.aestheticsWeight, accent: Tab.setup.accent)
+                weightSlider(title: "Move Cost", value: $model.moveCostWeight, accent: Tab.setup.accent)
             }
 
-            Button("Save Profile") {
+            Button {
                 model.saveProfile()
+            } label: {
+                Label("Save Profile", systemImage: "checkmark.circle.fill")
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .tint(Tab.setup.accent)
             .disabled(!model.canSubmitProfile)
         }
     }
 
+    private var profilesCard: some View {
+        card(title: "Profiles", subtitle: "Switch context quickly before planning") {
+            if model.savedProfiles.isEmpty {
+                Text("No saved profiles yet")
+                    .foregroundStyle(.secondary)
+            } else {
+                Picker("Active profile", selection: $model.selectedProfileID) {
+                    ForEach(model.savedProfiles) { profile in
+                        Text(profile.name).tag(Optional(profile.id))
+                    }
+                }
+                .pickerStyle(.menu)
+
+                ForEach(model.savedProfiles) { profile in
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(profile.name)
+                                .font(.headline)
+                            Text("\(profile.context.displayTitle) • \(profile.handedness.displayTitle) • \(profile.gripMode.displayTitle)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if model.selectedProfileID == profile.id {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
+            Button {
+                model.loadProfiles()
+            } label: {
+                Label("Refresh Profiles", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
     private var calibrationCard: some View {
-        card(title: "Reachability Calibration", subtitle: "Personalize thumb reach weighting") {
+        card(title: "Reachability Calibration", subtitle: "Improve thumb weighting using quick taps") {
             if let target = model.calibrationCurrentTarget {
                 Text("Current target: R\(target.row + 1) C\(target.column + 1) (\(model.calibrationProgressLabel))")
                     .font(.subheadline)
@@ -233,7 +390,7 @@ struct RootView: View {
                         model.handleCalibrationTap(row: coordinate.row, column: coordinate.column)
                     } label: {
                         Text("\(coordinate.row + 1),\(coordinate.column + 1)")
-                            .font(.caption2)
+                            .font(.caption2.weight(.semibold))
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
@@ -246,6 +403,7 @@ struct RootView: View {
                 model.startCalibration()
             }
             .buttonStyle(.bordered)
+            .tint(Tab.setup.accent)
 
             if !model.lastCalibrationMap.slotWeights.isEmpty {
                 Text("Calibration saved with \(model.lastCalibrationMap.slotWeights.count) sampled targets.")
@@ -255,54 +413,13 @@ struct RootView: View {
         }
     }
 
-    private var profilesCard: some View {
-        card(title: "Saved Profiles") {
-            if model.savedProfiles.isEmpty {
-                Text("No saved profiles yet")
-                    .foregroundStyle(.secondary)
-            } else {
-                Picker("Active profile", selection: $model.selectedProfileID) {
-                    ForEach(model.savedProfiles) { profile in
-                        Text(profile.name).tag(Optional(profile.id))
-                    }
-                }
-
-                ForEach(model.savedProfiles) { profile in
-                    HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(profile.name)
-                                .font(.headline)
-                            Text("\(profile.context.displayTitle) • \(profile.handedness.displayTitle) • \(profile.gripMode.displayTitle)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if model.selectedProfileID == profile.id {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                        }
-                    }
-                }
-            }
-
-            Button("Refresh Profiles") {
-                model.loadProfiles()
-            }
-            .buttonStyle(.bordered)
-        }
-    }
-
     private var importSessionCard: some View {
-        card(title: "Screenshot Session", subtitle: "Import home-screen screenshots in page order") {
+        card(title: "Screenshot Intake", subtitle: "Bring in pages and detect app slots") {
             if let session = model.importSession {
                 HStack {
-                    Label("Session \(session.id.uuidString.prefix(8))", systemImage: "rectangle.stack")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    metricPill(title: "Session", value: String(session.id.uuidString.prefix(8)))
+                    metricPill(title: "Pages", value: "\(session.pages.count)")
                     Spacer()
-                    Text("\(session.pages.count) pages")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
 
                 PhotosPicker(selection: $selectedItem, matching: .images) {
@@ -310,6 +427,7 @@ struct RootView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(Tab.importData.accent)
 
                 HStack {
                     Button("Analyze Latest") {
@@ -332,11 +450,9 @@ struct RootView: View {
                 if !model.detectedSlots.isEmpty {
                     HStack {
                         Text("Detected slots")
-                            .font(.subheadline)
+                            .font(.subheadline.weight(.semibold))
                         Spacer()
-                        Text("OCR \(model.ocrQuality.displayTitle)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        metricPill(title: "OCR", value: model.ocrQuality.displayTitle)
                     }
 
                     if model.hasSlotConflicts {
@@ -363,11 +479,13 @@ struct RootView: View {
                                 } increment: {
                                     model.adjustDetectedSlot(index: index, pageDelta: 1)
                                 }
+
                                 slotStepper(label: "Row \(model.detectedSlots[index].slot.row + 1)") {
                                     model.adjustDetectedSlot(index: index, rowDelta: -1)
                                 } increment: {
                                     model.adjustDetectedSlot(index: index, rowDelta: 1)
                                 }
+
                                 slotStepper(label: "Col \(model.detectedSlots[index].slot.column + 1)") {
                                     model.adjustDetectedSlot(index: index, columnDelta: -1)
                                 } increment: {
@@ -391,11 +509,12 @@ struct RootView: View {
                 model.startOrResetSession()
             }
             .buttonStyle(.borderedProminent)
+            .tint(Tab.importData.accent)
         }
     }
 
     private var importedScreensCard: some View {
-        card(title: "Imported Pages") {
+        card(title: "Imported Pages", subtitle: "Reorder pages to match your home-screen sequence") {
             if let session = model.importSession, !session.pages.isEmpty {
                 ForEach(session.pages) { page in
                     HStack(spacing: 10) {
@@ -433,6 +552,7 @@ struct RootView: View {
                         }
                         .buttonStyle(.borderless)
                     }
+                    .padding(.vertical, 4)
                 }
             } else {
                 Text("Add screenshots to begin OCR and slot detection.")
@@ -442,9 +562,9 @@ struct RootView: View {
     }
 
     private var usageAndGenerationCard: some View {
-        card(title: "Usage + Recommendation", subtitle: "Bring in usage signals and generate a move plan") {
+        card(title: "Usage Signals + Recommendation", subtitle: "Connect data and generate an actionable arrangement") {
             if let activeProfileName = model.activeProfileName {
-                Text("Active profile: \(activeProfileName)")
+                Label("Active profile: \(activeProfileName)", systemImage: "person.crop.circle")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
@@ -457,11 +577,9 @@ struct RootView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Native Screen Time")
-                        .font(.subheadline)
+                        .font(.subheadline.weight(.semibold))
                     Spacer()
-                    Text(model.nativeScreenTimeAuthorizationLabel)
-                        .font(.caption)
-                        .foregroundStyle(model.nativeScreenTimeAuthorized ? .green : .secondary)
+                    metricPill(title: "Status", value: model.nativeScreenTimeAuthorizationLabel)
                 }
 
                 HStack {
@@ -491,12 +609,13 @@ struct RootView: View {
                         filter: model.nativeUsageFilter
                     )
                     .frame(minHeight: 150)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
             }
 #endif
 
             Toggle("Use manual usage input", isOn: $model.manualUsageEnabled)
+                .tint(Tab.plan.accent)
 
             if model.manualUsageEnabled {
                 PhotosPicker(selection: $selectedUsageItem, matching: .images) {
@@ -507,14 +626,20 @@ struct RootView: View {
                 .disabled(model.selectedProfileID == nil)
 
                 if !model.importedUsageEntries.isEmpty {
-                    ForEach(Array(model.importedUsageEntries.prefix(6).enumerated()), id: \.offset) { _, entry in
-                        HStack {
-                            Text(entry.appName)
-                                .lineLimit(1)
-                            Spacer()
-                            Text("\(Int(entry.minutesPerDay)) min")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Latest imported usage")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        ForEach(Array(model.importedUsageEntries.prefix(6).enumerated()), id: \.offset) { _, entry in
+                            HStack {
+                                Text(entry.appName)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text("\(Int(entry.minutesPerDay)) min")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -549,30 +674,33 @@ struct RootView: View {
             }
 
             if model.detectedSlots.isEmpty {
-                Text("Analyze home-screen screenshots in Import tab first.")
+                Label("Analyze home-screen screenshots in Import tab first.", systemImage: "arrow.up.circle")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
-            Button("Generate Rearrangement Guide") {
+            Button {
                 model.generateRecommendationGuide()
+            } label: {
+                Label("Generate Rearrangement Guide", systemImage: "sparkles.rectangle.stack")
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .tint(Tab.plan.accent)
             .disabled(model.selectedProfileID == nil || model.detectedSlots.isEmpty)
 
             if let summary = model.simulationSummary {
                 HStack {
-                    Label("Score \(String(format: "%+.3f", summary.aggregateScoreDelta))", systemImage: "chart.line.uptrend.xyaxis")
+                    metricPill(title: "Score", value: String(format: "%+.3f", summary.aggregateScoreDelta))
+                    metricPill(title: "Moves", value: "\(summary.moveCount)")
                     Spacer()
-                    Label("\(summary.moveCount) moves", systemImage: "arrow.left.arrow.right")
                 }
-                .font(.subheadline)
             }
         }
     }
 
     private var recommendationHistoryCard: some View {
-        card(title: "Recommendation History") {
+        card(title: "Recommendation History", subtitle: "Compare new and previous plans") {
             ForEach(Array(model.recommendationHistory.prefix(8).enumerated()), id: \.offset) { _, plan in
                 HStack(alignment: .top) {
                     Text(model.historyLabel(for: plan))
@@ -601,7 +729,7 @@ struct RootView: View {
     }
 
     private var layoutPreviewCard: some View {
-        card(title: "Layout Preview") {
+        card(title: "Layout Snapshot", subtitle: "Before and after for top assignments") {
             if !model.currentLayoutAssignments.isEmpty {
                 Text("Current")
                     .font(.subheadline)
@@ -636,19 +764,24 @@ struct RootView: View {
     }
 
     private var applyChecklistCard: some View {
-        card(title: "Guided Apply", subtitle: "Execute recommended moves with progress tracking") {
+        card(title: "Guided Apply", subtitle: "Follow this sequence to rearrange with less friction") {
             if model.moveSteps.isEmpty {
                 Text("Generate a recommendation in Plan tab to create checklist steps.")
                     .foregroundStyle(.secondary)
             } else {
-                HStack {
-                    Text("Progress")
-                        .font(.subheadline)
-                    Spacer()
-                    Text(model.moveProgressText)
-                        .font(.subheadline)
-                        .monospacedDigit()
-                        .foregroundStyle(model.allMovesCompleted ? .green : .secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Progress")
+                            .font(.subheadline)
+                        Spacer()
+                        Text(model.moveProgressText)
+                            .font(.subheadline)
+                            .monospacedDigit()
+                            .foregroundStyle(model.allMovesCompleted ? .green : .secondary)
+                    }
+
+                    ProgressView(value: applyProgressValue)
+                        .tint(Tab.apply.accent)
                 }
 
                 HStack {
@@ -667,30 +800,37 @@ struct RootView: View {
                 }
 
                 ForEach(Array(model.moveSteps.prefix(24).enumerated()), id: \.offset) { index, step in
+                    let isDone = model.completedMoveStepIDs.contains(step.id)
+                    let isNext = model.nextPendingMoveStepID == step.id
+
                     HStack(alignment: .top, spacing: 10) {
                         Button {
                             model.toggleMoveStepCompletion(step.id)
                         } label: {
-                            Image(systemName: model.completedMoveStepIDs.contains(step.id) ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(model.completedMoveStepIDs.contains(step.id) ? .green : .secondary)
+                            Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(isDone ? .green : .secondary)
                         }
                         .buttonStyle(.plain)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(index + 1). Move \(model.displayName(for: step.appID))")
                                 .font(.subheadline)
-                                .foregroundStyle(model.completedMoveStepIDs.contains(step.id) ? .secondary : .primary)
+                                .foregroundStyle(isDone ? .secondary : .primary)
                             Text("\(slotLabel(step.fromSlot)) -> \(slotLabel(step.toSlot))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            if model.nextPendingMoveStepID == step.id {
+                            if isNext {
                                 Text("Next recommended step")
                                     .font(.caption2)
                                     .foregroundStyle(.orange)
                             }
                         }
                     }
-                    .padding(.vertical, 2)
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(isNext ? Color.orange.opacity(0.14) : Color(.tertiarySystemFill))
+                    )
                 }
             }
         }
@@ -704,7 +844,8 @@ struct RootView: View {
             }
             .padding(16)
         }
-        .background(Color(.systemGroupedBackground))
+        .scrollIndicators(.hidden)
+        .background(Color.clear)
     }
 
     private func card<Content: View>(
@@ -713,9 +854,9 @@ struct RootView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.headline)
+                    .font(.system(.title3, design: .rounded).weight(.bold))
                 if let subtitle {
                     Text(subtitle)
                         .font(.caption)
@@ -725,11 +866,46 @@ struct RootView: View {
 
             content()
         }
-        .padding(14)
+        .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.thinMaterial)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.40), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
+    }
+
+    private func metricPill(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.weight(.semibold))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(.tertiarySystemFill), in: Capsule())
+    }
+
+    private func pickerRow<Selection: Hashable, Content: View>(
+        title: String,
+        selection: Binding<Selection>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        LabeledContent {
+            Picker(title, selection: selection) {
+                content()
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+        } label: {
+            Text(title)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func slotStepper(
@@ -757,7 +933,7 @@ struct RootView: View {
         .buttonStyle(.borderless)
     }
 
-    private func weightSlider(title: String, value: Binding<Double>) -> some View {
+    private func weightSlider(title: String, value: Binding<Double>, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(title)
@@ -767,6 +943,28 @@ struct RootView: View {
                     .monospacedDigit()
             }
             Slider(value: value, in: 0...1)
+                .tint(accent)
+        }
+    }
+
+    private var applyProgressValue: Double {
+        guard !model.moveSteps.isEmpty else {
+            return 0
+        }
+
+        return Double(model.completedMoveCount) / Double(model.moveSteps.count)
+    }
+
+    private func tabStepIndex(_ tab: Tab) -> Int {
+        switch tab {
+        case .setup:
+            return 1
+        case .importData:
+            return 2
+        case .plan:
+            return 3
+        case .apply:
+            return 4
         }
     }
 
@@ -785,6 +983,11 @@ struct RootView: View {
 
 #Preview {
     RootView()
+}
+
+#Preview("Dark") {
+    RootView()
+        .preferredColorScheme(.dark)
 }
 @MainActor
 final class RootViewModel: ObservableObject {
