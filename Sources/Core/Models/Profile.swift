@@ -45,6 +45,7 @@ public struct Profile: Identifiable, Codable, Hashable, Sendable {
     public let id: UUID
     public var name: String
     public var context: ProfileContext
+    public var customContextLabel: String?
     public var handedness: Handedness
     public var gripMode: GripMode
     public var goalWeights: GoalWeights
@@ -56,6 +57,7 @@ public struct Profile: Identifiable, Codable, Hashable, Sendable {
         id: UUID = UUID(),
         name: String,
         context: ProfileContext,
+        customContextLabel: String? = nil,
         handedness: Handedness,
         gripMode: GripMode,
         goalWeights: GoalWeights = .default,
@@ -66,6 +68,7 @@ public struct Profile: Identifiable, Codable, Hashable, Sendable {
         self.id = id
         self.name = name
         self.context = context
+        self.customContextLabel = customContextLabel
         self.handedness = handedness
         self.gripMode = gripMode
         self.goalWeights = goalWeights

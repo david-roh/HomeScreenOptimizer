@@ -14,7 +14,38 @@ import Privacy
 import Profiles
 import Simulation
 import SwiftUI
+import UIKit
 import Usage
+
+enum VisualPatternMode: String, CaseIterable, Codable, Sendable, Identifiable {
+    case colorBands
+    case rainbowPath
+    case mirrorBalance
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .colorBands:
+            return "Color Bands"
+        case .rainbowPath:
+            return "Rainbow Path"
+        case .mirrorBalance:
+            return "Mirror Balance"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .colorBands:
+            return "Groups similar icon colors into clean horizontal bands."
+        case .rainbowPath:
+            return "Orders icons by hue in a serpentine path."
+        case .mirrorBalance:
+            return "Places similar colors symmetrically for visual balance."
+        }
+    }
+}
 
 struct RootView: View {
     @StateObject private var model = RootViewModel()
@@ -22,9 +53,11 @@ struct RootView: View {
     @State private var selectedUsageItem: PhotosPickerItem?
     @State private var selectedTab: Tab = .setup
     @State private var selectedPreset: OptimizationPreset = .balanced
+    @State private var customContextFocus: CustomContextFocus = .balanced
+    @State private var selectedVisualPattern: VisualPatternMode = .colorBands
     @State private var showTuneSheet = false
     @State private var showManualUsageEditor = false
-    @State private var showDetectedAppsEditor = false
+    @State private var showMappingEditor = false
     @State private var showPageList = false
     @State private var showLayoutPreview = false
     @State private var showAllMoves = false
@@ -128,13 +161,26 @@ struct RootView: View {
         var shortDescription: String {
             switch self {
             case .balanced:
-                return "General"
+                return "Balanced utility + aesthetics"
             case .reachFirst:
-                return "Thumb-first"
+                return "Prioritizes easy thumb access"
             case .visualHarmony:
-                return "Aesthetics"
+                return "Prioritizes coherent visual layout"
             case .minimalDisruption:
-                return "Fewer moves"
+                return "Minimizes icon movement"
+            }
+        }
+
+        var engineDescription: String {
+            switch self {
+            case .balanced:
+                return "Uses all four signals with moderate weights so recommendations stay practical."
+            case .reachFirst:
+                return "Pushes high-usage apps toward your highest-reach zones, accepting moderate movement."
+            case .visualHarmony:
+                return "Boosts aesthetic score, then applies a visual-pattern pass across the final grid."
+            case .minimalDisruption:
+                return "Strongly penalizes moves so the optimizer keeps your current layout mostly intact."
             }
         }
 
@@ -165,6 +211,41 @@ struct RootView: View {
             let aesthetics = (w.aesthetics - other.aesthetics) * (w.aesthetics - other.aesthetics)
             let moveCost = (w.moveCost - other.moveCost) * (w.moveCost - other.moveCost)
             return utility + flow + aesthetics + moveCost
+        }
+    }
+
+    private enum CustomContextFocus: String, CaseIterable, Identifiable {
+        case speed
+        case visual
+        case stability
+        case balanced
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .speed:
+                return "Speed"
+            case .visual:
+                return "Visual"
+            case .stability:
+                return "Stability"
+            case .balanced:
+                return "Balanced"
+            }
+        }
+
+        var preset: OptimizationPreset {
+            switch self {
+            case .speed:
+                return .reachFirst
+            case .visual:
+                return .visualHarmony
+            case .stability:
+                return .minimalDisruption
+            case .balanced:
+                return .balanced
+            }
         }
     }
 
@@ -233,12 +314,27 @@ struct RootView: View {
         .sheet(isPresented: $showManualUsageEditor) {
             manualUsageSheet
         }
+        .sheet(isPresented: $showMappingEditor) {
+            mappingEditorSheet
+        }
         .onAppear {
             model.loadProfiles()
             syncPresetFromModelWeights()
+            model.visualPatternMode = selectedVisualPattern
+            model.visualModeEnabled = selectedPreset == .visualHarmony
             if !quickStartSeen && !isUITesting {
                 showQuickStart = true
             }
+        }
+        .onChange(of: selectedPreset) { _, preset in
+            model.visualModeEnabled = preset == .visualHarmony
+            if preset != .visualHarmony {
+                selectedVisualPattern = .colorBands
+                model.visualPatternMode = .colorBands
+            }
+        }
+        .onChange(of: selectedVisualPattern) { _, pattern in
+            model.visualPatternMode = pattern
         }
         .onChange(of: model.selectedProfileID) { _, _ in
             model.handleProfileSelectionChange()
@@ -460,6 +556,27 @@ struct RootView: View {
                 }
             }
 
+            if model.context == .custom {
+                TextField("Custom context label (e.g. Commute)", text: $model.customContextLabel)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled()
+                    .textFieldStyle(.roundedBorder)
+
+                Picker("Custom focus", selection: $customContextFocus) {
+                    ForEach(CustomContextFocus.allCases) { focus in
+                        Text(focus.title).tag(focus)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: customContextFocus) { _, focus in
+                    applyPreset(focus.preset)
+                }
+
+                Text("Custom focus preloads weights so this profile behaves the way you expect.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
             pickerRow(title: "Hand", icon: "hand.point.up.left", selection: $model.handedness) {
                 ForEach(Handedness.allCases, id: \.self) { value in
                     Text(value.displayTitle).tag(value)
@@ -479,6 +596,29 @@ struct RootView: View {
             }
             .onChange(of: selectedPreset) { _, preset in
                 applyPreset(preset)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(selectedPreset.shortDescription)
+                    .font(.subheadline.weight(.semibold))
+                Text(selectedPreset.engineDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            if selectedPreset == .visualHarmony {
+                pickerRow(title: "Visual Pattern", icon: "paintpalette", selection: $selectedVisualPattern) {
+                    ForEach(VisualPatternMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+
+                Text(selectedVisualPattern.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
 
             HStack {
@@ -544,43 +684,56 @@ struct RootView: View {
                         .foregroundStyle(.orange)
                 }
 
-                DisclosureGroup("Edit detected apps (\(model.detectedSlots.count))", isExpanded: $showDetectedAppsEditor) {
-                    VStack(spacing: 10) {
-                        ForEach(Array(model.detectedSlots.prefix(8).indices), id: \.self) { index in
-                            VStack(spacing: 8) {
-                                TextField("App name", text: model.bindingForDetectedAppName(index: index))
-                                    .textInputAutocapitalization(.words)
-                                    .autocorrectionDisabled()
-                                    .textFieldStyle(.roundedBorder)
+                if !model.detectedSlots.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Detected Apps")
+                            .font(.subheadline.weight(.semibold))
 
-                                HStack(spacing: 12) {
-                                    slotStepper(label: "P\(model.detectedSlots[index].slot.page + 1)") {
-                                        model.adjustDetectedSlot(index: index, pageDelta: -1)
-                                    } increment: {
-                                        model.adjustDetectedSlot(index: index, pageDelta: 1)
-                                    }
+                        Text("Review names and position quickly. Each card shows icon preview + detected location.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
 
-                                    slotStepper(label: "R\(model.detectedSlots[index].slot.row + 1)") {
-                                        model.adjustDetectedSlot(index: index, rowDelta: -1)
-                                    } increment: {
-                                        model.adjustDetectedSlot(index: index, rowDelta: 1)
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                            ForEach(Array(model.detectedSlots.prefix(6).indices), id: \.self) { index in
+                                let detected = model.detectedSlots[index]
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack(spacing: 8) {
+                                        detectedIconPreview(for: detected)
+                                        Text(detected.appName)
+                                            .font(.subheadline.weight(.semibold))
+                                            .lineLimit(1)
                                     }
-
-                                    slotStepper(label: "C\(model.detectedSlots[index].slot.column + 1)") {
-                                        model.adjustDetectedSlot(index: index, columnDelta: -1)
-                                    } increment: {
-                                        model.adjustDetectedSlot(index: index, columnDelta: 1)
-                                    }
+                                    Text(slotHumanLabel(detected.slot))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
                                 }
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                             }
-                            .padding(10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(Color(.tertiarySystemFill))
-                            )
+                        }
+
+                        if model.detectedSlots.count > 6 {
+                            Text("+\(model.detectedSlots.count - 6) more apps")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        HStack {
+                            Button("Edit Mappings") {
+                                showMappingEditor = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Tab.importData.accent)
+
+                            Spacer()
+
+                            Button("Reset to OCR") {
+                                model.resetDetectedSlotCorrections()
+                            }
+                            .buttonStyle(.bordered)
                         }
                     }
-                    .padding(.top, 8)
                 }
 
                 DisclosureGroup("Page order", isExpanded: $showPageList) {
@@ -748,6 +901,73 @@ struct RootView: View {
         }
     }
 
+    private var mappingEditorSheet: some View {
+        NavigationStack {
+            List {
+                Section("How to use") {
+                    Text("Choose the app name, then set the exact page, row, and column where that icon appears on your screenshot.")
+                    Text("Rows are top-to-bottom, columns are left-to-right.")
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Detected apps") {
+                    ForEach(Array(model.detectedSlots.indices), id: \.self) { index in
+                        let detected = model.detectedSlots[index]
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 10) {
+                                detectedIconPreview(for: detected)
+                                TextField("App name", text: model.bindingForDetectedAppName(index: index))
+                                    .textInputAutocapitalization(.words)
+                                    .autocorrectionDisabled()
+                            }
+
+                            HStack {
+                                Picker("Page", selection: pageBinding(for: index)) {
+                                    ForEach(0..<max(model.importSession?.pages.count ?? 1, 1), id: \.self) { page in
+                                        Text("Page \(page + 1)").tag(page)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+
+                                Picker("Row", selection: rowBinding(for: index)) {
+                                    ForEach(0..<6, id: \.self) { row in
+                                        Text("Row \(row + 1)").tag(row)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+
+                                Picker("Column", selection: columnBinding(for: index)) {
+                                    ForEach(0..<4, id: \.self) { column in
+                                        Text("Col \(column + 1)").tag(column)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .navigationTitle("Edit Mappings")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Reset") {
+                        model.resetDetectedSlotCorrections()
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        showMappingEditor = false
+                    }
+                }
+            }
+        }
+    }
+
     private var manualUsageSheet: some View {
         NavigationStack {
             List {
@@ -874,18 +1094,54 @@ struct RootView: View {
     private var tuneSheet: some View {
         NavigationStack {
             Form {
+                Section("How Weights Work") {
+                    Text("These weights decide what the optimizer values most. Higher value means stronger priority in final placement.")
+                    Text("Tip: keep all four non-zero so plans stay usable and not extreme.")
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Weights") {
-                    weightRow(title: "Utility", value: utilityWeightBinding, accent: Tab.setup.accent)
-                    weightRow(title: "Flow", value: flowWeightBinding, accent: Tab.setup.accent)
-                    weightRow(title: "Aesthetics", value: aestheticsWeightBinding, accent: Tab.setup.accent)
-                    weightRow(title: "Move Cost", value: moveCostWeightBinding, accent: Tab.setup.accent)
+                    weightRow(
+                        title: "Utility",
+                        detail: "Boosts frequent apps into high-reach zones.",
+                        value: utilityWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                    weightRow(
+                        title: "Flow",
+                        detail: "Keeps likely app sequences close together.",
+                        value: flowWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                    weightRow(
+                        title: "Aesthetics",
+                        detail: "Improves visual grouping and pattern consistency.",
+                        value: aestheticsWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                    weightRow(
+                        title: "Move Cost",
+                        detail: "Penalizes excessive rearrangement steps.",
+                        value: moveCostWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                }
+
+                Section("Calibration Guide") {
+                    Text("1. Tap Start Calibration.")
+                    Text("2. Tap only the highlighted target as fast as possible.")
+                    Text("3. Repeat until all targets are completed.")
+                    Text("This personalizes reachability to your actual thumb movement.")
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Calibration") {
                     if let target = model.calibrationCurrentTarget {
-                        Text("Target R\(target.row + 1) C\(target.column + 1)")
+                        Text("Current target: Row \(target.row + 1), Column \(target.column + 1)")
+                        Text("Progress: \(model.calibrationProgressLabel)")
+                            .foregroundStyle(.secondary)
                     } else {
-                        Text("No session")
+                        Text("No active session")
                             .foregroundStyle(.secondary)
                     }
 
@@ -1043,7 +1299,7 @@ struct RootView: View {
         .background(Color(.tertiarySystemFill), in: Capsule())
     }
 
-    private func weightRow(title: String, value: Binding<Double>, accent: Color) -> some View {
+    private func weightRow(title: String, detail: String, value: Binding<Double>, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(title)
@@ -1054,36 +1310,77 @@ struct RootView: View {
             }
             Slider(value: value, in: 0...1)
                 .tint(accent)
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 
-    private func slotStepper(
-        label: String,
-        decrement: @escaping () -> Void,
-        increment: @escaping () -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                Button {
-                    decrement()
-                } label: {
-                    Image(systemName: "minus.circle")
-                }
-                Button {
-                    increment()
-                } label: {
-                    Image(systemName: "plus.circle")
-                }
+    private func detectedIconPreview(for detected: DetectedAppSlot) -> some View {
+        Group {
+            if let data = model.detectedIconPreviewDataBySlot[detected.slot],
+               let image = UIImage(data: data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: fallbackSymbol(for: detected.appName))
+                    .resizable()
+                    .scaledToFit()
+                    .padding(6)
+                    .foregroundStyle(.secondary)
             }
         }
-        .buttonStyle(.borderless)
+        .frame(width: 26, height: 26)
+        .background(Color(.quaternarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func fallbackSymbol(for appName: String) -> String {
+        let key = appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if key.contains("maps") { return "map.fill" }
+        if key.contains("calendar") { return "calendar" }
+        if key.contains("photo") { return "photo.fill" }
+        if key.contains("message") { return "message.fill" }
+        if key.contains("mail") { return "envelope.fill" }
+        if key.contains("camera") { return "camera.fill" }
+        if key.contains("news") { return "newspaper.fill" }
+        if key.contains("fitness") { return "figure.run" }
+        if key.contains("health") { return "heart.fill" }
+        if key.contains("music") { return "music.note" }
+        if key.contains("safari") { return "safari.fill" }
+        if key.contains("settings") { return "gearshape.fill" }
+        return "app.fill"
+    }
+
+    private func slotHumanLabel(_ slot: Slot) -> String {
+        "Page \(slot.page + 1) • Row \(slot.row + 1) • Col \(slot.column + 1)"
+    }
+
+    private func pageBinding(for index: Int) -> Binding<Int> {
+        Binding(
+            get: { model.detectedSlots.indices.contains(index) ? model.detectedSlots[index].slot.page : 0 },
+            set: { model.setDetectedSlot(index: index, page: $0) }
+        )
+    }
+
+    private func rowBinding(for index: Int) -> Binding<Int> {
+        Binding(
+            get: { model.detectedSlots.indices.contains(index) ? model.detectedSlots[index].slot.row : 0 },
+            set: { model.setDetectedSlot(index: index, row: $0) }
+        )
+    }
+
+    private func columnBinding(for index: Int) -> Binding<Int> {
+        Binding(
+            get: { model.detectedSlots.indices.contains(index) ? model.detectedSlots[index].slot.column : 0 },
+            set: { model.setDetectedSlot(index: index, column: $0) }
+        )
     }
 
     private func applyPreset(_ preset: OptimizationPreset) {
         selectedPreset = preset
+        model.visualModeEnabled = preset == .visualHarmony
         let weights = preset.weights
         model.utilityWeight = weights.utility
         model.flowWeight = weights.flow
@@ -1093,6 +1390,7 @@ struct RootView: View {
 
     private func syncPresetFromModelWeights() {
         selectedPreset = OptimizationPreset.nearest(to: currentGoalWeights)
+        model.visualModeEnabled = selectedPreset == .visualHarmony
     }
 
     private var currentGoalWeights: GoalWeights {
@@ -1418,7 +1716,7 @@ struct RootView: View {
     }
 
     private func slotLabel(_ slot: Slot) -> String {
-        "P\(slot.page + 1) R\(slot.row + 1) C\(slot.column + 1)"
+        slotHumanLabel(slot)
     }
 
     private var calibrationCoordinates: [(row: Int, column: Int, id: String)] {
@@ -1458,6 +1756,7 @@ private struct EmptyStateRow: View {
 final class RootViewModel: ObservableObject {
     @Published var profileName = ""
     @Published var context: ProfileContext = .workday
+    @Published var customContextLabel = ""
     @Published var handedness: Handedness = .right
     @Published var gripMode: GripMode = .oneHand
 
@@ -1474,6 +1773,7 @@ final class RootViewModel: ObservableObject {
     @Published var ocrCandidates: [OCRLabelCandidate] = []
     @Published var ocrQuality: ImportQuality = .low
     @Published var detectedSlots: [DetectedAppSlot] = []
+    @Published var detectedIconPreviewDataBySlot: [Slot: Data] = [:]
     @Published var calibrationInProgress = false
     @Published var calibrationCurrentTarget: Slot?
     @Published var calibrationProgressLabel = "0/0"
@@ -1492,6 +1792,8 @@ final class RootViewModel: ObservableObject {
     @Published var activeRecommendationPlanID: UUID?
     @Published var recommendationHistory: [LayoutPlan] = []
     @Published var historyComparisonMessage = ""
+    @Published var visualModeEnabled = false
+    @Published var visualPatternMode: VisualPatternMode = .colorBands
 
     private let profileBuilder = OnboardingProfileBuilder()
     private let profileRepository: FileProfileRepository
@@ -1633,6 +1935,7 @@ final class RootViewModel: ObservableObject {
 
         profileName = profile.name
         context = profile.context
+        customContextLabel = profile.customContextLabel ?? ""
         handedness = profile.handedness
         gripMode = profile.gripMode
         utilityWeight = profile.goalWeights.utility
@@ -1729,6 +2032,8 @@ final class RootViewModel: ObservableObject {
         )
 
         var profile = profileBuilder.buildProfile(from: answers)
+        let customLabel = customContextLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        profile.customContextLabel = context == .custom ? (customLabel.isEmpty ? nil : customLabel) : nil
         if !lastCalibrationMap.slotWeights.isEmpty {
             profile.reachabilityMap = lastCalibrationMap
         }
@@ -1750,6 +2055,7 @@ final class RootViewModel: ObservableObject {
             ocrCandidates = []
             ocrQuality = .low
             detectedSlots = []
+            detectedIconPreviewDataBySlot = [:]
             resetRecommendationOutput()
             showStatus("Import session ready.", level: .success)
         } catch {
@@ -1822,6 +2128,7 @@ final class RootViewModel: ObservableObject {
             ocrCandidates = []
             ocrQuality = .low
             detectedSlots = []
+            detectedIconPreviewDataBySlot = [:]
             resetRecommendationOutput()
             showStatus("Removed screenshot.", level: .success)
         } catch {
@@ -1923,27 +2230,35 @@ final class RootViewModel: ObservableObject {
             apps: apps,
             currentAssignments: assignments
         )
+        var recommendedPlan = generated.recommendedPlan
+        if visualModeEnabled {
+            recommendedPlan.assignments = applyVisualPattern(
+                assignments: recommendedPlan.assignments,
+                appNamesByID: appNames,
+                mode: visualPatternMode
+            )
+        }
         let planMoves = movePlanBuilder.buildMoves(
             current: assignments,
-            target: generated.recommendedPlan.assignments
+            target: recommendedPlan.assignments
         )
         let simulation = whatIfSimulation.compare(
             currentScore: generated.currentScore,
-            candidateScore: generated.recommendedPlan.scoreBreakdown,
+            candidateScore: recommendedPlan.scoreBreakdown,
             moveCount: planMoves.count
         )
         let previousPlan = recommendationHistory.first
 
         currentLayoutAssignments = assignments
-        recommendedLayoutAssignments = generated.recommendedPlan.assignments
+        recommendedLayoutAssignments = recommendedPlan.assignments
         moveSteps = planMoves
         simulationSummary = simulation
         appNamesByID = appNames
-        activeRecommendationPlanID = generated.recommendedPlan.id
+        activeRecommendationPlanID = recommendedPlan.id
         completedMoveStepIDs = []
         persistGuidedApplyDraft()
         do {
-            try layoutPlanRepository.upsert(generated.recommendedPlan)
+            try layoutPlanRepository.upsert(recommendedPlan)
             loadRecommendationHistoryForSelectedProfile()
         } catch {
             showStatus("Generated guide but failed to save plan history: \(error.localizedDescription)", level: .error)
@@ -1951,7 +2266,7 @@ final class RootViewModel: ObservableObject {
 
         if let previousPlan {
             historyComparisonMessage = buildHistoryComparisonMessage(
-                currentPlan: generated.recommendedPlan,
+                currentPlan: recommendedPlan,
                 baselinePlan: previousPlan,
                 currentAssignments: assignments,
                 currentMoveCount: planMoves.count
@@ -1963,7 +2278,7 @@ final class RootViewModel: ObservableObject {
         trackAnalyticsEvent(
             .guideGenerated,
             profileID: profile.id,
-            planID: generated.recommendedPlan.id,
+            planID: recommendedPlan.id,
             payload: [
                 "move_count": String(planMoves.count),
                 "score_delta": String(format: "%.3f", simulation.aggregateScoreDelta)
@@ -1972,7 +2287,7 @@ final class RootViewModel: ObservableObject {
         trackAnalyticsEvent(
             .guidedApplyStarted,
             profileID: profile.id,
-            planID: generated.recommendedPlan.id,
+            planID: recommendedPlan.id,
             payload: ["total_steps": String(planMoves.count)]
         )
 
@@ -2097,6 +2412,7 @@ final class RootViewModel: ObservableObject {
         }
 
         var mutable = detectedSlots[index]
+        let originalSlot = mutable.slot
         let pageUpperBound = max((importSession?.pages.count ?? 1) - 1, 0)
         let rowUpperBound = 5
         let columnUpperBound = 3
@@ -2105,6 +2421,37 @@ final class RootViewModel: ObservableObject {
         mutable.slot.row = min(max(0, mutable.slot.row + rowDelta), rowUpperBound)
         mutable.slot.column = min(max(0, mutable.slot.column + columnDelta), columnUpperBound)
         detectedSlots[index] = mutable
+
+        if originalSlot != mutable.slot, let preview = detectedIconPreviewDataBySlot.removeValue(forKey: originalSlot) {
+            detectedIconPreviewDataBySlot[mutable.slot] = preview
+        }
+    }
+
+    func setDetectedSlot(index: Int, page: Int? = nil, row: Int? = nil, column: Int? = nil) {
+        guard detectedSlots.indices.contains(index) else {
+            return
+        }
+
+        let pageUpperBound = max((importSession?.pages.count ?? 1) - 1, 0)
+        let rowUpperBound = 5
+        let columnUpperBound = 3
+
+        var mutable = detectedSlots[index]
+        let originalSlot = mutable.slot
+        if let page {
+            mutable.slot.page = min(max(0, page), pageUpperBound)
+        }
+        if let row {
+            mutable.slot.row = min(max(0, row), rowUpperBound)
+        }
+        if let column {
+            mutable.slot.column = min(max(0, column), columnUpperBound)
+        }
+        detectedSlots[index] = mutable
+
+        if originalSlot != mutable.slot, let preview = detectedIconPreviewDataBySlot.removeValue(forKey: originalSlot) {
+            detectedIconPreviewDataBySlot[mutable.slot] = preview
+        }
     }
 
     func resetDetectedSlotCorrections() {
@@ -2113,6 +2460,9 @@ final class RootViewModel: ObservableObject {
         }
 
         detectedSlots = originalDetectedSlots
+        if let pages = importSession?.pages {
+            detectedIconPreviewDataBySlot = buildDetectedIconPreviewMap(from: pages, slots: detectedSlots)
+        }
         hydrateUsageDraftFromDetectedApps()
         showStatus("Restored OCR-detected labels and slots.", level: .info)
     }
@@ -2216,6 +2566,7 @@ final class RootViewModel: ObservableObject {
                     normalized.appName = normalizeDetectedAppName(detected.appName)
                     return normalized
                 }
+            detectedIconPreviewDataBySlot = buildDetectedIconPreviewMap(from: pages, slots: detectedSlots)
             originalDetectedSlots = detectedSlots
             hydrateUsageDraftFromDetectedApps()
 
@@ -2691,6 +3042,157 @@ final class RootViewModel: ObservableObject {
         }
 
         return resolved
+    }
+
+    private func buildDetectedIconPreviewMap(
+        from pages: [ScreenshotPage],
+        slots: [DetectedAppSlot],
+        rows: Int = 6,
+        columns: Int = 4
+    ) -> [Slot: Data] {
+        guard rows > 0, columns > 0 else {
+            return [:]
+        }
+
+        let pagesByIndex = Dictionary(uniqueKeysWithValues: pages.map { ($0.pageIndex, $0) })
+        var previews: [Slot: Data] = [:]
+
+        for detected in slots {
+            guard let page = pagesByIndex[detected.slot.page],
+                  let image = UIImage(contentsOfFile: page.filePath),
+                  let cgImage = image.cgImage else {
+                continue
+            }
+
+            let width = CGFloat(cgImage.width)
+            let height = CGFloat(cgImage.height)
+            let cellWidth = width / CGFloat(columns)
+            let cellHeight = height / CGFloat(rows)
+            let rowFromTop = max(0, min(rows - 1, rows - 1 - detected.slot.row))
+
+            let rawRect = CGRect(
+                x: CGFloat(detected.slot.column) * cellWidth + (cellWidth * 0.14),
+                y: CGFloat(rowFromTop) * cellHeight + (cellHeight * 0.06),
+                width: cellWidth * 0.72,
+                height: cellHeight * 0.62
+            )
+            let imageBounds = CGRect(x: 0, y: 0, width: width, height: height)
+            let cropRect = rawRect.integral.intersection(imageBounds)
+            guard !cropRect.isNull, cropRect.width > 1, cropRect.height > 1,
+                  let crop = cgImage.cropping(to: cropRect) else {
+                continue
+            }
+
+            let previewImage = UIImage(cgImage: crop)
+            if let data = previewImage.pngData() {
+                previews[detected.slot] = data
+            }
+        }
+
+        return previews
+    }
+
+    private func applyVisualPattern(
+        assignments: [LayoutAssignment],
+        appNamesByID: [UUID: String],
+        mode: VisualPatternMode
+    ) -> [LayoutAssignment] {
+        guard assignments.count > 1 else {
+            return assignments
+        }
+
+        let orderedSlots = visualSlotOrder(from: assignments.map(\.slot), mode: mode)
+        let orderedAppIDs = assignments
+            .map(\.appID)
+            .sorted { lhs, rhs in
+                let lhsName = appNamesByID[lhs] ?? ""
+                let rhsName = appNamesByID[rhs] ?? ""
+                let lhsKey = visualSortKey(for: lhsName, mode: mode)
+                let rhsKey = visualSortKey(for: rhsName, mode: mode)
+                if lhsKey.0 != rhsKey.0 {
+                    return lhsKey.0 < rhsKey.0
+                }
+                return lhsKey.1 < rhsKey.1
+            }
+
+        guard orderedAppIDs.count == orderedSlots.count else {
+            return assignments
+        }
+
+        return zip(orderedAppIDs, orderedSlots).map { appID, slot in
+            LayoutAssignment(appID: appID, slot: slot)
+        }
+    }
+
+    private func visualSlotOrder(from slots: [Slot], mode: VisualPatternMode) -> [Slot] {
+        switch mode {
+        case .colorBands:
+            return slots.sorted { lhs, rhs in
+                if lhs.page != rhs.page { return lhs.page < rhs.page }
+                if lhs.row != rhs.row { return lhs.row > rhs.row }
+                return lhs.column < rhs.column
+            }
+
+        case .rainbowPath:
+            return slots.sorted { lhs, rhs in
+                if lhs.page != rhs.page { return lhs.page < rhs.page }
+                if lhs.row != rhs.row { return lhs.row > rhs.row }
+                if lhs.row % 2 == 0 {
+                    return lhs.column < rhs.column
+                }
+                return lhs.column > rhs.column
+            }
+
+        case .mirrorBalance:
+            let centerRow = 2.5
+            let centerCol = 1.5
+            return slots.sorted { lhs, rhs in
+                if lhs.page != rhs.page { return lhs.page < rhs.page }
+
+                let lhsDistance = abs(Double(lhs.row) - centerRow) + abs(Double(lhs.column) - centerCol)
+                let rhsDistance = abs(Double(rhs.row) - centerRow) + abs(Double(rhs.column) - centerCol)
+                if lhsDistance != rhsDistance {
+                    return lhsDistance < rhsDistance
+                }
+                if lhs.row != rhs.row { return lhs.row > rhs.row }
+                return lhs.column < rhs.column
+            }
+        }
+    }
+
+    private func visualSortKey(for appName: String, mode: VisualPatternMode) -> (Int, String) {
+        let normalized = appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let seed = deterministicVisualSeed(for: normalized)
+        let colorBucket = canonicalColorBucket(for: normalized, fallback: seed % 8)
+
+        switch mode {
+        case .colorBands:
+            return (colorBucket, normalized)
+        case .rainbowPath:
+            return (seed % 360, normalized)
+        case .mirrorBalance:
+            return ((colorBucket * 10) + (normalized.count % 10), normalized)
+        }
+    }
+
+    private func canonicalColorBucket(for appName: String, fallback: Int) -> Int {
+        if appName.contains("maps") { return 2 }      // green/blue
+        if appName.contains("calendar") { return 1 }  // red
+        if appName.contains("photos") { return 5 }    // rainbow
+        if appName.contains("news") { return 1 }      // red
+        if appName.contains("health") { return 1 }    // pink/red
+        if appName.contains("mail") { return 3 }      // blue
+        if appName.contains("messages") { return 2 }  // green
+        if appName.contains("settings") { return 0 }  // gray
+        if appName.contains("camera") { return 0 }    // gray
+        if appName.contains("music") { return 4 }     // magenta
+        return fallback
+    }
+
+    private func deterministicVisualSeed(for text: String) -> Int {
+        text.unicodeScalars.reduce(7) { partial, scalar in
+            ((partial * 31) + Int(scalar.value)) % 10007
+        }
     }
 
     private func updateCalibrationProgress() {

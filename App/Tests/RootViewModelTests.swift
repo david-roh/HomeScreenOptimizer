@@ -89,6 +89,87 @@ final class RootViewModelTests: XCTestCase {
         XCTAssertEqual(alphaSlot, easySlot)
     }
 
+    func testVisualPatternColorBandsReordersAssignmentsByStyle() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        let profile = Profile(
+            name: "Visual",
+            context: .workday,
+            handedness: .right,
+            gripMode: .oneHand
+        )
+
+        let easySlot = Slot(page: 0, row: 5, column: 3)
+        let hardSlot = Slot(page: 0, row: 0, column: 0)
+
+        model.savedProfiles = [profile]
+        model.selectedProfileID = profile.id
+        model.detectedSlots = [
+            DetectedAppSlot(appName: "Calendar", confidence: 0.10, slot: hardSlot),
+            DetectedAppSlot(appName: "Maps", confidence: 0.95, slot: easySlot)
+        ]
+        model.manualUsageEnabled = true
+        model.bindingForUsageMinutes(appName: "Calendar").wrappedValue = "5"
+        model.bindingForUsageMinutes(appName: "Maps").wrappedValue = "120"
+        model.visualModeEnabled = true
+        model.visualPatternMode = .colorBands
+
+        model.generateRecommendationGuide()
+
+        let calendarSlot = model.recommendedLayoutAssignments
+            .first(where: { model.displayName(for: $0.appID) == "Calendar" })?
+            .slot
+        let mapsSlot = model.recommendedLayoutAssignments
+            .first(where: { model.displayName(for: $0.appID) == "Maps" })?
+            .slot
+
+        XCTAssertEqual(calendarSlot, easySlot)
+        XCTAssertEqual(mapsSlot, hardSlot)
+    }
+
+    func testSaveProfilePersistsCustomContextLabelOnlyForCustomContext() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        let nameSeed = UUID().uuidString
+
+        model.profileName = "Custom-\(nameSeed)"
+        model.context = .custom
+        model.customContextLabel = "Commute"
+        model.saveProfile()
+
+        let customProfile = model.savedProfiles.first { $0.name == "Custom-\(nameSeed)" }
+        XCTAssertEqual(customProfile?.context, .custom)
+        XCTAssertEqual(customProfile?.customContextLabel, "Commute")
+
+        model.profileName = "Workday-\(nameSeed)"
+        model.context = .workday
+        model.customContextLabel = "Should Clear"
+        model.saveProfile()
+
+        let workdayProfile = model.savedProfiles.first { $0.name == "Workday-\(nameSeed)" }
+        XCTAssertEqual(workdayProfile?.context, .workday)
+        XCTAssertNil(workdayProfile?.customContextLabel)
+    }
+
+    func testSetDetectedSlotMovesIconPreviewToUpdatedSlot() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        let original = Slot(page: 0, row: 0, column: 0)
+        let expected = Slot(page: 0, row: 4, column: 2)
+        let marker = Data([0xCA, 0xFE])
+
+        model.importSession = ScreenshotImportSession(
+            pages: [ScreenshotPage(filePath: "/tmp/page.png", pageIndex: 0)]
+        )
+        model.detectedSlots = [
+            DetectedAppSlot(appName: "Maps", confidence: 0.9, slot: original)
+        ]
+        model.detectedIconPreviewDataBySlot = [original: marker]
+
+        model.setDetectedSlot(index: 0, row: 4, column: 2)
+
+        XCTAssertEqual(model.detectedSlots[0].slot, expected)
+        XCTAssertNil(model.detectedIconPreviewDataBySlot[original])
+        XCTAssertEqual(model.detectedIconPreviewDataBySlot[expected], marker)
+    }
+
     func testUsageEditorAppNamesDeduplicatesByCanonicalName() {
         let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
         model.detectedSlots = [
