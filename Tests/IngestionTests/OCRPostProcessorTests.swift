@@ -8,6 +8,8 @@ final class OCRPostProcessorTests: XCTestCase {
             OCRLabelCandidate(text: "Instagram", confidence: 0.70),
             OCRLabelCandidate(text: "instagram", confidence: 0.89),
             OCRLabelCandidate(text: "Search", confidence: 0.99),
+            OCRLabelCandidate(text: "SUNDAY", confidence: 0.91),
+            OCRLabelCandidate(text: "No Events Today", confidence: 0.95),
             OCRLabelCandidate(text: "12345", confidence: 0.93),
             OCRLabelCandidate(text: "Maps", confidence: 0.82)
         ]

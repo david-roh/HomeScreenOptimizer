@@ -40,4 +40,37 @@ final class LayoutGridMapperTests: XCTestCase {
         XCTAssertEqual(detection.apps.first?.appName, "Two")
         XCTAssertEqual(detection.apps.first?.confidence ?? 0, 0.90, accuracy: 0.0001)
     }
+
+    func testMapFiltersLikelyWidgetNoise() {
+        let mapper = HomeScreenGridMapper()
+        let input = [
+            LocatedOCRLabelCandidate(
+                text: "No Events Today",
+                confidence: 0.98,
+                centerX: 0.22,
+                centerY: 0.86,
+                boxWidth: 0.48,
+                boxHeight: 0.12
+            ),
+            LocatedOCRLabelCandidate(
+                text: "SUNDAY",
+                confidence: 0.95,
+                centerX: 0.26,
+                centerY: 0.87
+            ),
+            LocatedOCRLabelCandidate(
+                text: "Maps",
+                confidence: 0.86,
+                centerX: 0.25,
+                centerY: 0.79,
+                boxWidth: 0.12,
+                boxHeight: 0.03
+            )
+        ]
+
+        let detection = mapper.map(locatedCandidates: input, page: 0, rows: 6, columns: 4)
+
+        XCTAssertEqual(detection.apps.count, 1)
+        XCTAssertEqual(detection.apps.first?.appName, "Maps")
+    }
 }

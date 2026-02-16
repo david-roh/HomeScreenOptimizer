@@ -20,12 +20,23 @@ public struct LocatedOCRLabelCandidate: Codable, Hashable, Sendable {
     public var confidence: Double
     public var centerX: Double
     public var centerY: Double
+    public var boxWidth: Double
+    public var boxHeight: Double
 
-    public init(text: String, confidence: Double, centerX: Double, centerY: Double) {
+    public init(
+        text: String,
+        confidence: Double,
+        centerX: Double,
+        centerY: Double,
+        boxWidth: Double = 0,
+        boxHeight: Double = 0
+    ) {
         self.text = text
         self.confidence = confidence
         self.centerX = centerX
         self.centerY = centerY
+        self.boxWidth = boxWidth
+        self.boxHeight = boxHeight
     }
 }
 
@@ -102,7 +113,9 @@ public struct VisionLayoutOCRExtractor: LayoutOCRExtracting, LayoutOCRLocating {
                 text: normalized.text,
                 confidence: normalized.confidence,
                 centerX: centerX,
-                centerY: centerY
+                centerY: centerY,
+                boxWidth: Double(observation.boundingBox.width),
+                boxHeight: Double(observation.boundingBox.height)
             )
 
             let key = normalized.text.lowercased()

@@ -26,7 +26,6 @@ struct RootView: View {
     @State private var showManualUsageEditor = false
     @State private var showDetectedAppsEditor = false
     @State private var showPageList = false
-    @State private var showHistory = false
     @State private var showLayoutPreview = false
     @State private var showAllMoves = false
     @State private var showQuickStart = false
@@ -243,6 +242,9 @@ struct RootView: View {
         .sheet(isPresented: $showQuickStart) {
             quickStartSheet
         }
+        .sheet(isPresented: $showManualUsageEditor) {
+            manualUsageSheet
+        }
         .onAppear {
             model.loadProfiles()
             syncPresetFromModelWeights()
@@ -370,15 +372,32 @@ struct RootView: View {
                     .foregroundStyle(Color.white.opacity(0.85))
             }
         }
-        .padding(14)
-        .background(
-            LinearGradient(
-                colors: [tab.accent, tab.accent.opacity(0.72)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+        .padding(15)
+        .background {
+            ZStack {
+                LinearGradient(
+                    colors: [tab.accent, tab.accent.opacity(0.70)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                Circle()
+                    .fill(.white.opacity(0.16))
+                    .frame(width: 120, height: 120)
+                    .offset(x: 120, y: -60)
+
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(.white.opacity(0.06))
+                    .rotationEffect(.degrees(-12))
+                    .offset(x: -100, y: 26)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(.white.opacity(0.22), lineWidth: 1)
         )
+        .shadow(color: tab.accent.opacity(0.25), radius: 12, x: 0, y: 7)
     }
 
     private var statusBanner: some View {
@@ -582,79 +601,89 @@ struct RootView: View {
 
     private var planCard: some View {
         card(title: "Plan") {
-            if let name = model.activeProfileName {
-                Text(name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                metricPill(title: "Profile", value: model.activeProfileName ?? "None")
+                metricPill(title: "Detected", value: "\(model.detectedSlots.count)")
+                Spacer()
             }
 
-#if canImport(DeviceActivity) && canImport(FamilyControls)
-            HStack {
-                Button(model.nativeScreenTimeAuthorized ? "Refresh Access" : "Connect Screen Time") {
-                    Task {
-                        await model.requestNativeScreenTimeAuthorization()
-                    }
+            Toggle(isOn: $model.manualUsageEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Use manual usage input")
+                        .font(.subheadline.weight(.semibold))
+                    Text(model.manualUsageEnabled ? "Screenshot + quick edit mode" : "Use native Screen Time access")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.bordered)
-
-                Button("Import Native Usage") {
-                    model.importNativeUsageSnapshot()
-                }
-                .buttonStyle(.bordered)
-                .disabled(!model.nativeScreenTimeAuthorized)
             }
-#endif
-
-            Toggle("Use manual usage input", isOn: $model.manualUsageEnabled)
-                .tint(Tab.plan.accent)
+            .tint(Tab.plan.accent)
+            .accessibilityIdentifier("manual-usage-toggle")
 
             if model.manualUsageEnabled {
-                PhotosPicker(selection: $selectedUsageItem, matching: .images) {
-                    Label("Import Screen Time Screenshot", systemImage: "chart.bar.doc.horizontal")
-                        .frame(maxWidth: .infinity)
+                HStack(spacing: 10) {
+                    PhotosPicker(selection: $selectedUsageItem, matching: .images) {
+                        Label("Import Screenshot", systemImage: "chart.bar.doc.horizontal")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.selectedProfileID == nil)
+
+                    Button("Edit Minutes") {
+                        showManualUsageEditor = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Tab.plan.accent)
+                    .disabled(model.selectedProfileID == nil)
                 }
-                .buttonStyle(.bordered)
-                .disabled(model.selectedProfileID == nil)
 
-                DisclosureGroup("Edit manual usage", isExpanded: $showManualUsageEditor) {
-                    VStack(spacing: 8) {
-                        ForEach(model.usageEditorAppNames, id: \.self) { appName in
-                            HStack {
-                                Text(appName)
-                                    .lineLimit(1)
-                                Spacer()
-                                TextField("min", text: model.bindingForUsageMinutes(appName: appName))
-                                    .keyboardType(.decimalPad)
-                                    .multilineTextAlignment(.trailing)
-                                    .frame(maxWidth: 84)
-                            }
-                        }
-
-                        HStack {
-                            Button("Load") {
-                                model.loadManualUsageSnapshot()
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(model.selectedProfileID == nil)
-
-                            Spacer()
-
-                            Button("Save") {
-                                model.saveManualUsageSnapshot()
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(model.selectedProfileID == nil || model.usageEditorAppNames.isEmpty)
+                if !model.importedUsageEntries.isEmpty {
+                    Text("Imported \(model.importedUsageEntries.count) app entries.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+#if canImport(DeviceActivity) && canImport(FamilyControls)
+                HStack(spacing: 10) {
+                    Button(model.nativeScreenTimeAuthorized ? "Refresh Access" : "Connect Screen Time") {
+                        Task {
+                            await model.requestNativeScreenTimeAuthorization()
                         }
                     }
-                    .padding(.top, 8)
+                    .buttonStyle(.bordered)
+
+                    Button("Import Usage") {
+                        model.importNativeUsageSnapshot()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Tab.plan.accent)
+                    .disabled(!model.nativeScreenTimeAuthorized)
                 }
+#else
+                Text("Screen Time API unavailable in this build.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+#endif
             }
+
+            if canGeneratePlan {
+                Text("Ready to generate a guided rearrangement.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let hint = stageShortHint(for: .plan) {
+                Text(hint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
 
             Button {
                 model.generateRecommendationGuide()
             } label: {
-                Label("Generate", systemImage: "sparkles")
-                    .frame(maxWidth: .infinity)
+                HStack {
+                    Image(systemName: "sparkles")
+                    Text("Generate Rearrangement")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(Tab.plan.accent)
@@ -668,34 +697,8 @@ struct RootView: View {
                 }
             }
 
-            DisclosureGroup("History", isExpanded: $showHistory) {
-                VStack(spacing: 8) {
-                    ForEach(Array(model.recommendationHistory.prefix(6).enumerated()), id: \.offset) { _, plan in
-                        HStack {
-                            Text(model.historyLabel(for: plan))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                            Spacer()
-                            if plan.id != model.activeRecommendationPlanID {
-                                Button("Compare") {
-                                    model.compareAgainstHistory(planID: plan.id)
-                                }
-                                .buttonStyle(.borderless)
-                            }
-                        }
-                    }
-                    if !model.historyComparisonMessage.isEmpty {
-                        Text(model.historyComparisonMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.top, 8)
-            }
-
-            DisclosureGroup("Preview", isExpanded: $showLayoutPreview) {
-                VStack(spacing: 8) {
+            DisclosureGroup("Inspect output", isExpanded: $showLayoutPreview) {
+                VStack(spacing: 10) {
                     ForEach(Array(model.recommendedLayoutAssignments.prefix(8).enumerated()), id: \.offset) { _, assignment in
                         HStack {
                             Text(model.displayName(for: assignment.appID))
@@ -705,8 +708,74 @@ struct RootView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+
+                    if !model.recommendationHistory.isEmpty {
+                        Divider()
+                        ForEach(Array(model.recommendationHistory.prefix(4).enumerated()), id: \.offset) { _, plan in
+                            HStack {
+                                Text(model.historyLabel(for: plan))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                Spacer()
+                                if plan.id != model.activeRecommendationPlanID {
+                                    Button("Compare") {
+                                        model.compareAgainstHistory(planID: plan.id)
+                                    }
+                                    .buttonStyle(.borderless)
+                                }
+                            }
+                        }
+                    }
                 }
                 .padding(.top, 8)
+            }
+        }
+    }
+
+    private var manualUsageSheet: some View {
+        NavigationStack {
+            List {
+                Section("Per-app minutes") {
+                    ForEach(model.usageEditorAppNames, id: \.self) { appName in
+                        HStack {
+                            Text(appName)
+                                .lineLimit(1)
+                            Spacer()
+                            TextField("min", text: model.bindingForUsageMinutes(appName: appName))
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(maxWidth: 84)
+                        }
+                    }
+                }
+
+                Section {
+                    HStack {
+                        Button("Load") {
+                            model.loadManualUsageSnapshot()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.selectedProfileID == nil)
+
+                        Spacer()
+
+                        Button("Save") {
+                            model.saveManualUsageSnapshot()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Tab.plan.accent)
+                        .disabled(model.selectedProfileID == nil || model.usageEditorAppNames.isEmpty)
+                    }
+                }
+            }
+            .navigationTitle("Manual Usage")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        showManualUsageEditor = false
+                    }
+                }
             }
         }
     }
@@ -858,7 +927,16 @@ struct RootView: View {
                         .padding(.top, 24)
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .always))
+                .tabViewStyle(.page(indexDisplayMode: .never))
+
+                HStack(spacing: 8) {
+                    ForEach(0..<tutorialCards.count, id: \.self) { index in
+                        Capsule()
+                            .fill(index == quickStartPage ? Tab.setup.accent : Tab.setup.accent.opacity(0.25))
+                            .frame(width: index == quickStartPage ? 20 : 8, height: 8)
+                            .animation(.easeInOut(duration: 0.2), value: quickStartPage)
+                    }
+                }
 
                 Button(quickStartPage == tutorialCards.count - 1 ? "Start" : "Next") {
                     if quickStartPage < tutorialCards.count - 1 {
@@ -901,13 +979,21 @@ struct RootView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.ultraThinMaterial)
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.78),
+                    selectedTab.accent.opacity(0.10)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.45), lineWidth: 1)
+                .stroke(selectedTab.accent.opacity(0.28), lineWidth: 1)
         )
+        .shadow(color: selectedTab.accent.opacity(0.14), radius: 10, x: 0, y: 5)
     }
 
     private func pickerRow<Selection: Hashable, Content: View>(
@@ -1391,6 +1477,7 @@ final class RootViewModel: ObservableObject {
     private let screenTimeUsageParser = ScreenTimeUsageParser()
     private let reachabilityCalibrator = ReachabilityCalibrator()
     private let usageNormalizer = UsageNormalizer()
+    private let appNameMatcher = AppNameMatcher()
     private let layoutPlanner = ReachabilityAwareLayoutPlanner()
     private let movePlanBuilder = MovePlanBuilder()
     private let whatIfSimulation = WhatIfSimulation()
@@ -1788,10 +1875,14 @@ final class RootViewModel: ObservableObject {
         let manualUsageByName = manualUsageEnabled
             ? usageNormalizer.normalize(minutesByName: parsedManualUsageMinutes())
             : [:]
+        let resolvedUsageByDetected = resolvedUsageByDetectedName(
+            manualUsageByName: manualUsageByName,
+            detectedSlots: sortedDetectedSlots
+        )
 
         for detected in sortedDetectedSlots {
             let canonicalName = canonicalAppName(detected.appName)
-            let usageScore = manualUsageByName[canonicalName] ?? max(0.05, detected.confidence)
+            let usageScore = resolvedUsageByDetected[canonicalName] ?? max(0.05, detected.confidence)
             let app = AppItem(displayName: detected.appName, usageScore: usageScore)
             apps.append(app)
             assignments.append(LayoutAssignment(appID: app.id, slot: detected.slot))
@@ -2090,6 +2181,11 @@ final class RootViewModel: ObservableObject {
                         return lhs.slot.row < rhs.slot.row
                     }
                     return lhs.slot.column < rhs.slot.column
+                }
+                .map { detected in
+                    var normalized = detected
+                    normalized.appName = normalizeDetectedAppName(detected.appName)
+                    return normalized
                 }
             originalDetectedSlots = detectedSlots
             hydrateUsageDraftFromDetectedApps()
@@ -2479,17 +2575,39 @@ final class RootViewModel: ObservableObject {
 
     private func applyImportedUsage(_ entries: [ScreenTimeUsageEntry]) {
         manualUsageEnabled = true
-        importedUsageEntries = entries
+        let expectedNames = usageEditorAppNames
+        var bestByKey: [String: ScreenTimeUsageEntry] = [:]
 
         for entry in entries {
-            let key = canonicalAppName(entry.appName)
+            let mappedName = appNameMatcher.bestMatch(
+                for: entry.appName,
+                against: expectedNames,
+                minimumScore: 0.72
+            ) ?? entry.appName
+            let key = canonicalAppName(mappedName)
             guard !key.isEmpty else {
                 continue
             }
 
             usageDraftByNormalizedName[key] = String(format: "%.0f", entry.minutesPerDay)
+
+            let mappedEntry = ScreenTimeUsageEntry(
+                appName: mappedName,
+                minutesPerDay: entry.minutesPerDay,
+                confidence: entry.confidence
+            )
+            if let existing = bestByKey[key], existing.confidence >= mappedEntry.confidence {
+                continue
+            }
+            bestByKey[key] = mappedEntry
         }
 
+        importedUsageEntries = bestByKey.values.sorted { lhs, rhs in
+            if lhs.minutesPerDay != rhs.minutesPerDay {
+                return lhs.minutesPerDay > rhs.minutesPerDay
+            }
+            return lhs.appName.localizedCaseInsensitiveCompare(rhs.appName) == .orderedAscending
+        }
         hydrateUsageDraftFromDetectedApps()
     }
 
@@ -2503,6 +2621,47 @@ final class RootViewModel: ObservableObject {
 
     private func canonicalAppName(_ text: String) -> String {
         usageNormalizer.canonicalName(text)
+    }
+
+    private func normalizeDetectedAppName(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return text
+        }
+
+        return appNameMatcher.canonicalizeToKnownApp(trimmed, minimumScore: 0.88)
+    }
+
+    private func resolvedUsageByDetectedName(
+        manualUsageByName: [String: Double],
+        detectedSlots: [DetectedAppSlot]
+    ) -> [String: Double] {
+        guard !manualUsageByName.isEmpty else {
+            return [:]
+        }
+
+        let usageKeys = Array(manualUsageByName.keys)
+        var resolved: [String: Double] = [:]
+
+        for detected in detectedSlots {
+            let detectedCanonical = canonicalAppName(detected.appName)
+
+            if let exact = manualUsageByName[detectedCanonical] {
+                resolved[detectedCanonical] = exact
+                continue
+            }
+
+            if let best = appNameMatcher.bestMatch(
+                for: detectedCanonical,
+                against: usageKeys,
+                minimumScore: 0.72
+            ),
+               let value = manualUsageByName[best] {
+                resolved[detectedCanonical] = value
+            }
+        }
+
+        return resolved
     }
 
     private func updateCalibrationProgress() {

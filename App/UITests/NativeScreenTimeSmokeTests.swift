@@ -16,7 +16,7 @@ final class NativeScreenTimeSmokeTests: XCTestCase {
 
         let connectButton = app.buttons["Connect Screen Time"]
         let refreshButton = app.buttons["Refresh Access"]
-        let manualUsageToggle = app.switches["Use manual usage input"]
+        let manualUsageToggle = app.switches["manual-usage-toggle"]
 
         var foundControls = connectButton.exists || refreshButton.exists
         var foundToggle = manualUsageToggle.exists

@@ -102,6 +102,15 @@ public struct OCRPostProcessor: Sendable {
         "screen time",
         "app library",
         "today",
+        "sunday",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "no events today",
+        "no events",
         "yesterday",
         "battery"
     ]
