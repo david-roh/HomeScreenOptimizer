@@ -50,28 +50,42 @@ jobs:
         id: simulator
         run: |
           set -euo pipefail
-          if ! command -v jq >/dev/null 2>&1; then
-            echo "jq is required to parse xcodebuild destinations."
-            exit 1
-          fi
-          DEST_JSON="$(
-            xcodebuild -project HomeScreenOptimizerApp.xcodeproj -scheme HomeScreenOptimizeriOS -showdestinations -json 2>/dev/null \
-              | awk 'BEGIN { emit = 0 } { if (!emit && ($0 ~ /^[[:space:]]*\\{/ || $0 ~ /^[[:space:]]*\\[[[:space:]]*\\{/)) emit = 1; if (emit) print }'
-          )"
-          if [[ -z "${DEST_JSON}" ]]; then
-            echo "xcodebuild did not return destination JSON."
-            exit 1
-          fi
-          DESTINATION="$(
-            printf '%s' "${DEST_JSON}" \
-              | jq -r '.. | objects | .destinations? // empty | .[] | select(.platform == "iOS Simulator" and (.name | startswith("iPhone")) and ((.error // null) == null)) | "platform=iOS Simulator,id=\(.id)"' \
-              | head -n 1
-          )"
-          if [[ -z "${DESTINATION}" ]]; then
-            echo "No available iPhone simulator destination found on runner."
-            exit 1
-          fi
-          echo "destination=${DESTINATION}" >> "${GITHUB_OUTPUT}"
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+import json
+import subprocess
+import sys
+
+try:
+    output = subprocess.check_output(
+        ["xcrun", "simctl", "list", "-j", "devices", "available"],
+        text=True,
+        stderr=subprocess.STDOUT,
+        timeout=30
+    )
+except subprocess.TimeoutExpired:
+    print("Timed out while listing iOS simulator devices.", file=sys.stderr)
+    sys.exit(1)
+except subprocess.CalledProcessError as error:
+    print("Failed to list iOS simulator devices.", file=sys.stderr)
+    print(error.output, file=sys.stderr)
+    sys.exit(error.returncode)
+
+try:
+    payload = json.loads(output)
+except json.JSONDecodeError as error:
+    print(f"simctl returned non-JSON output: {error}", file=sys.stderr)
+    print(output, file=sys.stderr)
+    sys.exit(1)
+
+for runtime in payload.get("devices", {}).values():
+    for device in runtime:
+        if device.get("isAvailable") and device.get("name", "").startswith("iPhone"):
+            print(f"destination=platform=iOS Simulator,id={device['udid']}")
+            sys.exit(0)
+
+print("No available iPhone simulator destination found on runner.", file=sys.stderr)
+sys.exit(1)
+PY
       - name: Run iOS tests (unit + UI)
         run: |
           set -euo pipefail
