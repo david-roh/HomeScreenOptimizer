@@ -21,6 +21,7 @@ struct RootView: View {
                 }
 
                 onboardingSection
+                calibrationSection
                 profileListSection
                 importSection
             }
@@ -98,6 +99,50 @@ struct RootView: View {
 
             Button("Refresh Profiles") {
                 model.loadProfiles()
+            }
+        }
+    }
+
+    private var calibrationSection: some View {
+        Section("Reachability Calibration") {
+            Text("Tap the highlighted target as quickly as possible. This personalizes thumb-reach weighting.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            if let target = model.calibrationCurrentTarget {
+                Text("Target \(model.calibrationProgressLabel): R\(target.row + 1) C\(target.column + 1)")
+                    .font(.subheadline)
+            } else {
+                Text("No active calibration session")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 8) {
+                ForEach(0..<6, id: \.self) { row in
+                    ForEach(0..<4, id: \.self) { column in
+                        Button {
+                            model.handleCalibrationTap(row: row, column: column)
+                        } label: {
+                            Text("\(row + 1),\(column + 1)")
+                                .font(.caption2)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(model.calibrationButtonTint(row: row, column: column))
+                        .disabled(!model.calibrationInProgress)
+                    }
+                }
+            }
+
+            Button(model.calibrationInProgress ? "Restart Calibration" : "Start Calibration") {
+                model.startCalibration()
+            }
+
+            if !model.lastCalibrationMap.slotWeights.isEmpty {
+                Text("Calibration saved with \(model.lastCalibrationMap.slotWeights.count) sampled targets.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -233,6 +278,10 @@ final class RootViewModel: ObservableObject {
     @Published var ocrCandidates: [OCRLabelCandidate] = []
     @Published var ocrQuality: ImportQuality = .low
     @Published var detectedSlots: [DetectedAppSlot] = []
+    @Published var calibrationInProgress = false
+    @Published var calibrationCurrentTarget: Slot?
+    @Published var calibrationProgressLabel = "0/0"
+    @Published var lastCalibrationMap = ReachabilityMap()
 
     private let profileBuilder = OnboardingProfileBuilder()
     private let profileRepository: FileProfileRepository
@@ -240,6 +289,10 @@ final class RootViewModel: ObservableObject {
     private let ocrExtractor: any LayoutOCRExtracting
     private let ocrPostProcessor = OCRPostProcessor()
     private let gridMapper = HomeScreenGridMapper()
+    private let reachabilityCalibrator = ReachabilityCalibrator()
+    private var calibrationTargets: [Slot] = []
+    private var calibrationStartAt: Date?
+    private var calibrationSamples: [CalibrationSample] = []
 
     init(ocrExtractor: any LayoutOCRExtracting = VisionLayoutOCRExtractor()) {
         self.ocrExtractor = ocrExtractor
@@ -289,7 +342,10 @@ final class RootViewModel: ObservableObject {
             )
         )
 
-        let profile = profileBuilder.buildProfile(from: answers)
+        var profile = profileBuilder.buildProfile(from: answers)
+        if !lastCalibrationMap.slotWeights.isEmpty {
+            profile.reachabilityMap = lastCalibrationMap
+        }
 
         do {
             try profileRepository.upsert(profile)
@@ -419,6 +475,69 @@ final class RootViewModel: ObservableObject {
         }
     }
 
+    func startCalibration() {
+        calibrationTargets = [
+            Slot(page: 0, row: 5, column: 3),
+            Slot(page: 0, row: 5, column: 0),
+            Slot(page: 0, row: 4, column: 2),
+            Slot(page: 0, row: 4, column: 1),
+            Slot(page: 0, row: 2, column: 3),
+            Slot(page: 0, row: 2, column: 0),
+            Slot(page: 0, row: 0, column: 3),
+            Slot(page: 0, row: 0, column: 0)
+        ]
+
+        calibrationSamples = []
+        calibrationInProgress = true
+        calibrationCurrentTarget = calibrationTargets.first
+        calibrationStartAt = Date()
+        updateCalibrationProgress()
+        showStatus("Calibration started.", level: .info)
+    }
+
+    func handleCalibrationTap(row: Int, column: Int) {
+        guard calibrationInProgress, let target = calibrationCurrentTarget else {
+            return
+        }
+
+        let tapped = Slot(page: 0, row: row, column: column)
+        guard tapped == target else {
+            showStatus("Tap the highlighted target.", level: .info)
+            return
+        }
+
+        let elapsedMs = max(1, Date().timeIntervalSince(calibrationStartAt ?? Date()) * 1000)
+        calibrationSamples.append(CalibrationSample(slot: target, responseTimeMs: elapsedMs))
+
+        calibrationTargets.removeFirst()
+
+        if calibrationTargets.isEmpty {
+            calibrationInProgress = false
+            calibrationCurrentTarget = nil
+            calibrationStartAt = nil
+            lastCalibrationMap = reachabilityCalibrator.buildReachabilityMap(from: calibrationSamples)
+            showStatus("Calibration complete. Reachability map updated.", level: .success)
+            updateCalibrationProgress()
+            return
+        }
+
+        calibrationCurrentTarget = calibrationTargets.first
+        calibrationStartAt = Date()
+        updateCalibrationProgress()
+    }
+
+    func calibrationButtonTint(row: Int, column: Int) -> Color {
+        guard calibrationInProgress, let target = calibrationCurrentTarget else {
+            return .gray
+        }
+
+        if target.row == row, target.column == column {
+            return .orange
+        }
+
+        return .gray
+    }
+
     private func writeImageToTemporaryFile(data: Data) throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("HSOImports", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -457,6 +576,13 @@ final class RootViewModel: ObservableObject {
     private func showStatus(_ message: String, level: StatusLevel = .info) {
         statusMessage = message
         statusLevel = level
+    }
+
+    private func updateCalibrationProgress() {
+        let completed = calibrationSamples.count
+        let total = calibrationSamples.count + calibrationTargets.count
+        let current = calibrationInProgress ? min(completed + 1, max(total, 1)) : completed
+        calibrationProgressLabel = "\(current)/\(max(total, 1))"
     }
 }
 
