@@ -35,6 +35,13 @@
   - OCR post-processing and quality scoring implemented.
   - Grid mapper converts located OCR labels into page/row/column slots.
 
+### E2-T3 Manual correction interface
+- Status: IN_PROGRESS
+- Notes:
+  - Inline OCR correction UI added for app-name edits and slot page/row/column adjustments.
+  - Duplicate-slot conflict warning shown before guide generation.
+  - iOS unit tests added for correction behaviors in `RootViewModel`.
+
 ### E4-T1 Onboarding profile setup
 - Status: DONE
 - Notes:

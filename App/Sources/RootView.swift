@@ -207,17 +207,86 @@ struct RootView: View {
                 }
 
                 if !model.detectedSlots.isEmpty {
-                    Text("Detected layout slots")
+                    Text("Detected layout slots (editable)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
-                    ForEach(Array(model.detectedSlots.prefix(10).enumerated()), id: \.offset) { _, slot in
-                        HStack {
-                            Text(slot.appName)
-                            Spacer()
-                            Text("P\(slot.slot.page + 1) R\(slot.slot.row + 1) C\(slot.slot.column + 1)")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                    if model.hasSlotConflicts {
+                        Label("Some apps share the same slot. Adjust before generating.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+
+                    Button("Reset OCR Corrections") {
+                        model.resetDetectedSlotCorrections()
+                    }
+                    .font(.footnote)
+
+                    ForEach(Array(model.detectedSlots.prefix(12).indices), id: \.self) { index in
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField(
+                                "App name",
+                                text: model.bindingForDetectedAppName(index: index)
+                            )
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Page \(model.detectedSlots[index].slot.page + 1)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 8) {
+                                        Button {
+                                            model.adjustDetectedSlot(index: index, pageDelta: -1)
+                                        } label: {
+                                            Image(systemName: "minus.circle")
+                                        }
+                                        Button {
+                                            model.adjustDetectedSlot(index: index, pageDelta: 1)
+                                        } label: {
+                                            Image(systemName: "plus.circle")
+                                        }
+                                    }
+                                }
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Row \(model.detectedSlots[index].slot.row + 1)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 8) {
+                                        Button {
+                                            model.adjustDetectedSlot(index: index, rowDelta: -1)
+                                        } label: {
+                                            Image(systemName: "minus.circle")
+                                        }
+                                        Button {
+                                            model.adjustDetectedSlot(index: index, rowDelta: 1)
+                                        } label: {
+                                            Image(systemName: "plus.circle")
+                                        }
+                                    }
+                                }
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Col \(model.detectedSlots[index].slot.column + 1)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 8) {
+                                        Button {
+                                            model.adjustDetectedSlot(index: index, columnDelta: -1)
+                                        } label: {
+                                            Image(systemName: "minus.circle")
+                                        }
+                                        Button {
+                                            model.adjustDetectedSlot(index: index, columnDelta: 1)
+                                        } label: {
+                                            Image(systemName: "plus.circle")
+                                        }
+                                    }
+                                }
+                            }
+                            .buttonStyle(.borderless)
                         }
                     }
                 }
@@ -415,6 +484,7 @@ final class RootViewModel: ObservableObject {
     private var calibrationStartAt: Date?
     private var calibrationSamples: [CalibrationSample] = []
     private var appNamesByID: [UUID: String] = [:]
+    private var originalDetectedSlots: [DetectedAppSlot] = []
 
     init(ocrExtractor: any LayoutOCRExtracting = VisionLayoutOCRExtractor()) {
         self.ocrExtractor = ocrExtractor
@@ -445,8 +515,37 @@ final class RootViewModel: ObservableObject {
         return savedProfiles.first { $0.id == selectedProfileID }?.name
     }
 
+    var hasSlotConflicts: Bool {
+        var seen: Set<Slot> = []
+        for detected in detectedSlots {
+            if seen.contains(detected.slot) {
+                return true
+            }
+            seen.insert(detected.slot)
+        }
+        return false
+    }
+
     func displayName(for appID: UUID) -> String {
         appNamesByID[appID] ?? "Unknown App"
+    }
+
+    func bindingForDetectedAppName(index: Int) -> Binding<String> {
+        Binding(
+            get: {
+                guard self.detectedSlots.indices.contains(index) else {
+                    return ""
+                }
+                return self.detectedSlots[index].appName
+            },
+            set: { newValue in
+                guard self.detectedSlots.indices.contains(index) else {
+                    return
+                }
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                self.detectedSlots[index].appName = trimmed
+            }
+        )
     }
 
     func loadProfiles() {
@@ -597,6 +696,11 @@ final class RootViewModel: ObservableObject {
             return
         }
 
+        guard !hasSlotConflicts else {
+            showStatus("Resolve duplicate slot conflicts before generating a guide.", level: .error)
+            return
+        }
+
         let sortedDetectedSlots = detectedSlots.sorted { lhs, rhs in
             if lhs.slot.page != rhs.slot.page {
                 return lhs.slot.page < rhs.slot.page
@@ -643,6 +747,36 @@ final class RootViewModel: ObservableObject {
         showStatus("Generated guide with \(planMoves.count) moves.", level: .success)
     }
 
+    func adjustDetectedSlot(
+        index: Int,
+        pageDelta: Int = 0,
+        rowDelta: Int = 0,
+        columnDelta: Int = 0
+    ) {
+        guard detectedSlots.indices.contains(index) else {
+            return
+        }
+
+        var mutable = detectedSlots[index]
+        let pageUpperBound = max((importSession?.pages.count ?? 1) - 1, 0)
+        let rowUpperBound = 5
+        let columnUpperBound = 3
+
+        mutable.slot.page = min(max(0, mutable.slot.page + pageDelta), pageUpperBound)
+        mutable.slot.row = min(max(0, mutable.slot.row + rowDelta), rowUpperBound)
+        mutable.slot.column = min(max(0, mutable.slot.column + columnDelta), columnUpperBound)
+        detectedSlots[index] = mutable
+    }
+
+    func resetDetectedSlotCorrections() {
+        guard !originalDetectedSlots.isEmpty else {
+            return
+        }
+
+        detectedSlots = originalDetectedSlots
+        showStatus("Restored OCR-detected labels and slots.", level: .info)
+    }
+
     private func analyzeScreenshots(_ pages: [ScreenshotPage]) async {
         resetRecommendationOutput()
 
@@ -674,6 +808,7 @@ final class RootViewModel: ObservableObject {
                     }
                     return lhs.slot.column < rhs.slot.column
                 }
+            originalDetectedSlots = detectedSlots
 
             if ocrCandidates.isEmpty {
                 showStatus("No likely app labels detected.", level: .info)
@@ -780,6 +915,7 @@ final class RootViewModel: ObservableObject {
         moveSteps = []
         simulationSummary = nil
         appNamesByID = [:]
+        originalDetectedSlots = []
     }
 
     private func writeImageToTemporaryFile(data: Data) throws -> URL {

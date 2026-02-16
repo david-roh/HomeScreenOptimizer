@@ -15,6 +15,7 @@
 		7C9BA7747C8D4EEAB4ED0E6F /* Guide in Frameworks */ = {isa = PBXBuildFile; productRef = 6858C5D5DFA330EFE748AE53 /* Guide */; };
 		B135114CA54CB6010B4EF35E /* Core in Frameworks */ = {isa = PBXBuildFile; productRef = 197321D8BEFC80F109D113E2 /* Core */; };
 		BF0F01A88DD482513CC1A2D7 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB18E163BDDECDA4126B81A5 /* RootView.swift */; };
+		CB36C858316F96BA23254FEC /* RootViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0D6D9D1C2B010F43786E5D /* RootViewModelTests.swift */; };
 		D47CF2204CFE593E1C4E7639 /* HomeScreenOptimizeriOSTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA5A3705EEE7A1967AF7E00 /* HomeScreenOptimizeriOSTests.swift */; };
 		E668CBE5A6D1D4AB7251D508 /* Usage in Frameworks */ = {isa = PBXBuildFile; productRef = B3DCFBE7E5989913326E4742 /* Usage */; };
 		FA82762DD7BD0703FE0B6079 /* Optimizer in Frameworks */ = {isa = PBXBuildFile; productRef = 85826957B3729DB98F214ABB /* Optimizer */; };
@@ -36,6 +37,7 @@
 		8CA5A3705EEE7A1967AF7E00 /* HomeScreenOptimizeriOSTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreenOptimizeriOSTests.swift; sourceTree = "<group>"; };
 		A7F676E9B101BDFFFEF65EC0 /* New project */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "New project"; path = .; sourceTree = SOURCE_ROOT; };
 		D21AF8BA2185F422EC33CC82 /* HomeScreenOptimizeriOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreenOptimizeriOSApp.swift; sourceTree = "<group>"; };
+		DC0D6D9D1C2B010F43786E5D /* RootViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootViewModelTests.swift; sourceTree = "<group>"; };
 		EB18E163BDDECDA4126B81A5 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -62,6 +64,7 @@
 			isa = PBXGroup;
 			children = (
 				8CA5A3705EEE7A1967AF7E00 /* HomeScreenOptimizeriOSTests.swift */,
+				DC0D6D9D1C2B010F43786E5D /* RootViewModelTests.swift */,
 			);
 			name = Tests;
 			path = App/Tests;
@@ -206,6 +209,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D47CF2204CFE593E1C4E7639 /* HomeScreenOptimizeriOSTests.swift in Sources */,
+				CB36C858316F96BA23254FEC /* RootViewModelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
