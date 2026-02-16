@@ -4,12 +4,19 @@ on:
   pull_request:
   push:
     branches:
+      - master
       - main
       - 'codex/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
+  package-tests:
     runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode
@@ -17,9 +24,11 @@ jobs:
       - name: Swift version
         run: swift --version
       - name: Build
-        run: swift build
+        run: swift build --build-tests
       - name: Test
         run: swift test
+      - name: Prototype smoke run
+        run: swift run HSOPrototype
       - name: Lint (if installed)
         run: |
           if command -v swiftlint >/dev/null; then
@@ -27,3 +36,39 @@ jobs:
           else
             echo "swiftlint not installed on runner"
           fi
+
+  ios-tests:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+      - name: Resolve iOS test destination
+        id: simulator
+        run: |
+          set -euo pipefail
+          SIM_ID="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ {print $2; exit}')"
+          if [[ -z "${SIM_ID}" ]]; then
+            echo "No available iPhone simulator found on runner."
+            exit 1
+          fi
+          echo "simulator_id=${SIM_ID}" >> "${GITHUB_OUTPUT}"
+          xcrun simctl boot "${SIM_ID}" || true
+          xcrun simctl bootstatus "${SIM_ID}" -b
+      - name: Run iOS tests (unit + UI)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project HomeScreenOptimizerApp.xcodeproj \
+            -scheme HomeScreenOptimizeriOS \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.simulator_id }}" \
+            -resultBundlePath TestResults.xcresult \
+            test
+      - name: Upload iOS test bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          path: TestResults.xcresult
+          if-no-files-found: warn
