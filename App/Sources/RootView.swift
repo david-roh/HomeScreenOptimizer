@@ -21,6 +21,9 @@ struct RootView: View {
     @State private var selectedItem: PhotosPickerItem?
     @State private var selectedUsageItem: PhotosPickerItem?
     @State private var selectedTab: Tab = .setup
+    @State private var selectedPreset: OptimizationPreset = .balanced
+    @State private var showAdvancedWeights = false
+    @State private var showCalibrationPanel = false
 
     private enum Tab: String, CaseIterable {
         case setup
@@ -83,7 +86,7 @@ struct RootView: View {
         var accent: Color {
             switch self {
             case .setup:
-                return Color(red: 0.23, green: 0.49, blue: 0.97)
+                return Color(red: 0.22, green: 0.49, blue: 0.97)
             case .importData:
                 return Color(red: 0.10, green: 0.63, blue: 0.54)
             case .plan:
@@ -105,41 +108,105 @@ struct RootView: View {
                 return Color(red: 0.91, green: 0.97, blue: 0.93)
             }
         }
+    }
 
-        var ctaLabel: String {
+    private enum OptimizationPreset: String, CaseIterable, Identifiable {
+        case balanced
+        case reachFirst
+        case visualHarmony
+        case minimalDisruption
+
+        var id: String { rawValue }
+
+        var title: String {
             switch self {
-            case .setup:
-                return "Save profile to unlock planning"
-            case .importData:
-                return "Import pages and verify slots"
-            case .plan:
-                return "Generate recommendation"
-            case .apply:
-                return "Work through guided checklist"
+            case .balanced:
+                return "Balanced"
+            case .reachFirst:
+                return "Reach-First"
+            case .visualHarmony:
+                return "Visual"
+            case .minimalDisruption:
+                return "Low Disruption"
             }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .balanced:
+                return "General purpose"
+            case .reachFirst:
+                return "Thumb efficiency"
+            case .visualHarmony:
+                return "Aesthetic grouping"
+            case .minimalDisruption:
+                return "Fewest moves"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .balanced:
+                return "dial.medium"
+            case .reachFirst:
+                return "hand.tap"
+            case .visualHarmony:
+                return "paintpalette"
+            case .minimalDisruption:
+                return "arrow.uturn.backward.circle"
+            }
+        }
+
+        var weights: GoalWeights {
+            switch self {
+            case .balanced:
+                return GoalWeights(utility: 0.45, flow: 0.20, aesthetics: 0.20, moveCost: 0.15)
+            case .reachFirst:
+                return GoalWeights(utility: 0.58, flow: 0.18, aesthetics: 0.09, moveCost: 0.15)
+            case .visualHarmony:
+                return GoalWeights(utility: 0.24, flow: 0.20, aesthetics: 0.46, moveCost: 0.10)
+            case .minimalDisruption:
+                return GoalWeights(utility: 0.28, flow: 0.14, aesthetics: 0.08, moveCost: 0.50)
+            }
+        }
+
+        static func nearest(to weights: GoalWeights) -> OptimizationPreset {
+            let candidates = OptimizationPreset.allCases
+            return candidates.min { lhs, rhs in
+                lhs.distance(to: weights) < rhs.distance(to: weights)
+            } ?? .balanced
+        }
+
+        private func distance(to other: GoalWeights) -> Double {
+            let w = weights
+            let utility = (w.utility - other.utility) * (w.utility - other.utility)
+            let flow = (w.flow - other.flow) * (w.flow - other.flow)
+            let aesthetics = (w.aesthetics - other.aesthetics) * (w.aesthetics - other.aesthetics)
+            let moveCost = (w.moveCost - other.moveCost) * (w.moveCost - other.moveCost)
+            return utility + flow + aesthetics + moveCost
         }
     }
 
     var body: some View {
         NavigationStack {
-            TabView(selection: $selectedTab) {
+            TabView(selection: guidedTabSelection) {
                 stageCanvas(for: .setup) {
                     onboardingCard
-                    profilesCard
-                    calibrationCard
                 }
                 .tag(Tab.setup)
                 .tabItem {
-                    Label(Tab.setup.title, systemImage: Tab.setup.icon)
+                    Label(Tab.setup.title, systemImage: tabBarIcon(for: .setup))
                 }
 
                 stageCanvas(for: .importData) {
                     importSessionCard
-                    importedScreensCard
+                    if let pages = model.importSession?.pages, !pages.isEmpty {
+                        importedScreensCard
+                    }
                 }
                 .tag(Tab.importData)
                 .tabItem {
-                    Label(Tab.importData.title, systemImage: Tab.importData.icon)
+                    Label(Tab.importData.title, systemImage: tabBarIcon(for: .importData))
                 }
 
                 stageCanvas(for: .plan) {
@@ -155,7 +222,7 @@ struct RootView: View {
                 }
                 .tag(Tab.plan)
                 .tabItem {
-                    Label(Tab.plan.title, systemImage: Tab.plan.icon)
+                    Label(Tab.plan.title, systemImage: tabBarIcon(for: .plan))
                 }
 
                 stageCanvas(for: .apply) {
@@ -163,7 +230,7 @@ struct RootView: View {
                 }
                 .tag(Tab.apply)
                 .tabItem {
-                    Label(Tab.apply.title, systemImage: Tab.apply.icon)
+                    Label(Tab.apply.title, systemImage: tabBarIcon(for: .apply))
                 }
             }
             .navigationTitle("HomeScreenOptimizer")
@@ -179,6 +246,7 @@ struct RootView: View {
         .background(stageBackground(for: selectedTab).ignoresSafeArea())
         .onAppear {
             model.loadProfiles()
+            syncPresetFromModelWeights()
         }
         .onChange(of: model.selectedProfileID) { _, _ in
             model.handleProfileSelectionChange()
@@ -205,20 +273,46 @@ struct RootView: View {
         }
     }
 
-    private var workflowCompletionBadge: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "scope")
-            Text("\(Int((workflowCompletion * 100).rounded()))%")
-                .monospacedDigit()
-        }
-        .font(.caption.weight(.semibold))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(0.45), lineWidth: 1)
+    private var guidedTabSelection: Binding<Tab> {
+        Binding(
+            get: { selectedTab },
+            set: { newValue in
+                guard !bypassGuidedTabValidation else {
+                    selectedTab = newValue
+                    return
+                }
+
+                guard let reason = blockedReason(for: newValue) else {
+                    selectedTab = newValue
+                    return
+                }
+
+                model.presentStatus(reason, level: .info)
+                selectedTab = firstIncompleteTab()
+            }
         )
+    }
+
+    private var workflowCompletionBadge: some View {
+        Button {
+            deckPrimaryAction(for: selectedTab)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "scope")
+                Text("\(Int((workflowCompletion * 100).rounded()))%")
+                    .monospacedDigit()
+            }
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.45), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Run next guided action")
     }
 
     private func stageBackground(for tab: Tab) -> some View {
@@ -235,9 +329,8 @@ struct RootView: View {
 
     private func stageCanvas<Content: View>(for tab: Tab, @ViewBuilder content: () -> Content) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
                 commandDeck(for: tab)
-                stageRail(for: tab)
 
                 if !model.statusMessage.isEmpty {
                     statusBanner
@@ -246,11 +339,11 @@ struct RootView: View {
                 content()
 
                 Color.clear
-                    .frame(height: 8)
+                    .frame(height: 6)
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
-            .padding(.bottom, 22)
+            .padding(.bottom, 18)
         }
         .scrollIndicators(.hidden)
         .background(Color.clear)
@@ -275,7 +368,7 @@ struct RootView: View {
                     }
 
                     Text(tab.heroTitle)
-                        .font(.system(.title2, design: .rounded).weight(.bold))
+                        .font(.system(.title3, design: .rounded).weight(.bold))
 
                     Text(tab.heroSubtitle)
                         .font(.footnote)
@@ -298,14 +391,37 @@ struct RootView: View {
 
             HStack(spacing: 8) {
                 deckMetric(title: "Readiness", value: stageReadinessLabel(for: tab))
-                deckMetric(title: "Next", value: tab.ctaLabel)
+                deckMetric(title: "Next", value: deckPrimaryLabel(for: tab))
+            }
+
+            Button {
+                deckPrimaryAction(for: tab)
+            } label: {
+                HStack {
+                    Text(deckPrimaryLabel(for: tab))
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.title3)
+                }
+                .foregroundStyle(tab.accent)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 11)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            if let blocker = stageGuidanceText(for: tab) {
+                Text(blocker)
+                    .font(.caption)
+                    .foregroundStyle(Color.white.opacity(0.88))
             }
         }
         .foregroundStyle(.white)
         .padding(18)
         .background(
             LinearGradient(
-                colors: [tab.accent, tab.accent.opacity(0.73)],
+                colors: [tab.accent, tab.accent.opacity(0.72)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
@@ -335,33 +451,6 @@ struct RootView: View {
         .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private func stageRail(for tab: Tab) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(Tab.allCases, id: \.self) { item in
-                    let state = pipelineState(for: item)
-                    Button {
-                        selectedTab = item
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: state.icon)
-                            Text(item.title)
-                                .lineLimit(1)
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(state.foreground)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(state.background, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(item.title) tab")
-                }
-            }
-            .padding(.horizontal, 2)
-        }
-    }
-
     private var statusBanner: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: model.statusLevel.iconName)
@@ -387,7 +476,33 @@ struct RootView: View {
     }
 
     private var onboardingCard: some View {
-        card(title: "Profile Blueprint", subtitle: "Describe how you hold your phone and what optimization should prioritize.") {
+        card(title: "Profile Blueprint", subtitle: "One focused setup card: intent, style preset, optional fine tuning, then continue.") {
+            if !model.savedProfiles.isEmpty {
+                cardSection(title: "Saved Profiles", icon: "person.2") {
+                    Picker("Active profile", selection: $model.selectedProfileID) {
+                        ForEach(model.savedProfiles) { profile in
+                            Text(profile.name).tag(Optional(profile.id))
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    HStack {
+                        Button("Load Into Editor") {
+                            model.loadSelectedProfileIntoEditor()
+                            syncPresetFromModelWeights()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Spacer()
+
+                        Button("Refresh") {
+                            model.loadProfiles()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+
             TextField("Profile name", text: $model.profileName)
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
@@ -411,86 +526,77 @@ struct RootView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Goal Weights")
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Optimization Style")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
-                weightSlider(title: "Utility", detail: "Prioritize frequently used apps", value: $model.utilityWeight, accent: Tab.setup.accent)
-                weightSlider(title: "Flow", detail: "Reduce cognitive jumps", value: $model.flowWeight, accent: Tab.setup.accent)
-                weightSlider(title: "Aesthetics", detail: "Visual grouping and style", value: $model.aestheticsWeight, accent: Tab.setup.accent)
-                weightSlider(title: "Move Cost", detail: "Limit disruption from current layout", value: $model.moveCostWeight, accent: Tab.setup.accent)
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(OptimizationPreset.allCases) { preset in
+                        presetTile(for: preset)
+                    }
+                }
+            }
+
+            DisclosureGroup(isExpanded: $showAdvancedWeights) {
+                VStack(spacing: 10) {
+                    weightSlider(
+                        title: "Utility",
+                        detail: "Prioritize frequently used apps",
+                        value: utilityWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                    weightSlider(
+                        title: "Flow",
+                        detail: "Reduce cognitive jumps",
+                        value: flowWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                    weightSlider(
+                        title: "Aesthetics",
+                        detail: "Visual grouping and style",
+                        value: aestheticsWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                    weightSlider(
+                        title: "Move Cost",
+                        detail: "Limit disruption from current layout",
+                        value: moveCostWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                }
+                .padding(.top, 6)
+            } label: {
+                Label("Advanced Weight Controls", systemImage: "slider.horizontal.below.square.filled.and.square")
+                    .font(.subheadline.weight(.semibold))
+            }
+
+            DisclosureGroup(isExpanded: $showCalibrationPanel) {
+                calibrationPanel
+                    .padding(.top, 6)
+            } label: {
+                Label("Reachability Calibration (Optional)", systemImage: "hand.tap")
+                    .font(.subheadline.weight(.semibold))
             }
 
             Button {
-                model.saveProfile()
+                saveProfileAndContinue()
             } label: {
-                Label("Save Profile", systemImage: "checkmark.circle.fill")
+                Label(hasSavedProfile ? "Save Profile & Continue" : "Create Profile & Continue", systemImage: "arrow.right.circle.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(Tab.setup.accent)
             .disabled(!model.canSubmitProfile)
+
+            Text("Tip: use a preset first, then open Advanced only if you need finer control.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
-    private var profilesCard: some View {
-        card(title: "Profiles", subtitle: "Switch between routines like Workday and Weekend without re-entering settings.") {
-            HStack(spacing: 10) {
-                metricPill(title: "Saved", value: "\(model.savedProfiles.count)")
-                metricPill(title: "Selected", value: model.activeProfileName ?? "None")
-                Spacer(minLength: 0)
-            }
-
-            if model.savedProfiles.isEmpty {
-                EmptyStateRow(icon: "person.crop.circle.badge.plus", text: "Save your first profile to start generating recommendations.")
-            } else {
-                Picker("Active profile", selection: $model.selectedProfileID) {
-                    ForEach(model.savedProfiles) { profile in
-                        Text(profile.name).tag(Optional(profile.id))
-                    }
-                }
-                .pickerStyle(.menu)
-
-                ForEach(model.savedProfiles) { profile in
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(profile.name)
-                                .font(.subheadline.weight(.semibold))
-                            Text("\(profile.context.displayTitle) • \(profile.handedness.displayTitle) • \(profile.gripMode.displayTitle)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-
-                        Spacer()
-
-                        if model.selectedProfileID == profile.id {
-                            Label("Active", systemImage: "checkmark.circle.fill")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.green)
-                                .labelStyle(.titleAndIcon)
-                        }
-                    }
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color(.tertiarySystemFill))
-                    )
-                }
-            }
-
-            Button {
-                model.loadProfiles()
-            } label: {
-                Label("Refresh Profiles", systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(.bordered)
-        }
-    }
-
-    private var calibrationCard: some View {
-        card(title: "Reachability Calibration", subtitle: "Tap highlighted targets quickly to personalize thumb weighting.") {
+    private var calibrationPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 completionRing(value: calibrationCompletion, accent: Tab.setup.accent, lineWidth: 6, size: 46)
 
@@ -590,7 +696,7 @@ struct RootView: View {
                     }
 
                     if model.hasSlotConflicts {
-                        Label("Slot conflicts found. Resolve before generating plan.", systemImage: "exclamationmark.triangle.fill")
+                        Label("Slot conflicts found. Resolve before continuing to Plan.", systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
@@ -600,7 +706,7 @@ struct RootView: View {
                     }
                     .buttonStyle(.borderless)
 
-                    ForEach(Array(model.detectedSlots.prefix(12).indices), id: \.self) { index in
+                    ForEach(Array(model.detectedSlots.prefix(10).indices), id: \.self) { index in
                         VStack(alignment: .leading, spacing: 8) {
                             TextField("App name", text: model.bindingForDetectedAppName(index: index))
                                 .textInputAutocapitalization(.words)
@@ -647,7 +753,7 @@ struct RootView: View {
     }
 
     private var importedScreensCard: some View {
-        card(title: "Imported Pages", subtitle: "Reorder pages until they match your actual Home Screen sequence.") {
+        card(title: "Imported Pages", subtitle: "Reorder pages until they match your real Home Screen sequence.") {
             if let session = model.importSession, !session.pages.isEmpty {
                 ForEach(session.pages) { page in
                     HStack(spacing: 10) {
@@ -698,7 +804,7 @@ struct RootView: View {
     }
 
     private var usageAndGenerationCard: some View {
-        card(title: "Usage Signal + Recommendation", subtitle: "Choose a data source, then generate a move-efficient rearrangement.") {
+        card(title: "Usage Signal + Recommendation", subtitle: "Connect Screen Time or manual data, then generate your guided move plan.") {
             if let activeProfileName = model.activeProfileName {
                 Label("Active profile: \(activeProfileName)", systemImage: "person.crop.circle")
                     .font(.footnote)
@@ -819,7 +925,7 @@ struct RootView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Tab.plan.accent)
-            .disabled(model.selectedProfileID == nil || model.detectedSlots.isEmpty)
+            .disabled(!canGeneratePlan)
 
             if let summary = model.simulationSummary {
                 HStack(spacing: 10) {
@@ -940,7 +1046,7 @@ struct RootView: View {
                     .buttonStyle(.bordered)
                 }
 
-                ForEach(Array(model.moveSteps.prefix(28).enumerated()), id: \.offset) { index, step in
+                ForEach(Array(model.moveSteps.prefix(24).enumerated()), id: \.offset) { index, step in
                     let isDone = model.completedMoveStepIDs.contains(step.id)
                     let isNext = model.nextPendingMoveStepID == step.id
 
@@ -975,6 +1081,31 @@ struct RootView: View {
                 }
             }
         }
+    }
+
+    private func presetTile(for preset: OptimizationPreset) -> some View {
+        let isSelected = selectedPreset == preset
+
+        return Button {
+            applyPreset(preset)
+        } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                Label(preset.title, systemImage: preset.icon)
+                    .font(.subheadline.weight(.semibold))
+                Text(preset.subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(isSelected ? Color.white.opacity(0.88) : .secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected ? Tab.setup.accent : Color(.tertiarySystemFill))
+            )
+            .foregroundStyle(isSelected ? .white : .primary)
+        }
+        .buttonStyle(.plain)
     }
 
     private func cardSection<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
@@ -1122,6 +1253,277 @@ struct RootView: View {
         .accessibilityLabel("Completion \(Int((value * 100).rounded())) percent")
     }
 
+    private func applyPreset(_ preset: OptimizationPreset) {
+        selectedPreset = preset
+        let weights = preset.weights
+        model.utilityWeight = weights.utility
+        model.flowWeight = weights.flow
+        model.aestheticsWeight = weights.aesthetics
+        model.moveCostWeight = weights.moveCost
+    }
+
+    private func syncPresetFromModelWeights() {
+        selectedPreset = OptimizationPreset.nearest(to: currentGoalWeights)
+    }
+
+    private var currentGoalWeights: GoalWeights {
+        GoalWeights(
+            utility: model.utilityWeight,
+            flow: model.flowWeight,
+            aesthetics: model.aestheticsWeight,
+            moveCost: model.moveCostWeight
+        )
+    }
+
+    private var utilityWeightBinding: Binding<Double> {
+        Binding(
+            get: { model.utilityWeight },
+            set: { newValue in
+                model.utilityWeight = newValue
+            }
+        )
+    }
+
+    private var flowWeightBinding: Binding<Double> {
+        Binding(
+            get: { model.flowWeight },
+            set: { newValue in
+                model.flowWeight = newValue
+            }
+        )
+    }
+
+    private var aestheticsWeightBinding: Binding<Double> {
+        Binding(
+            get: { model.aestheticsWeight },
+            set: { newValue in
+                model.aestheticsWeight = newValue
+            }
+        )
+    }
+
+    private var moveCostWeightBinding: Binding<Double> {
+        Binding(
+            get: { model.moveCostWeight },
+            set: { newValue in
+                model.moveCostWeight = newValue
+            }
+        )
+    }
+
+    private func saveProfileAndContinue() {
+        model.saveProfile()
+        if canOpenImport {
+            selectedTab = .importData
+            model.presentStatus("Profile saved. Continue by importing Home Screen screenshots.", level: .success)
+        }
+    }
+
+    private func deckPrimaryAction(for tab: Tab) {
+        switch tab {
+        case .setup:
+            if canOpenImport {
+                selectedTab = .importData
+            } else {
+                saveProfileAndContinue()
+            }
+
+        case .importData:
+            guard canOpenImport else {
+                if let reason = blockedReason(for: .importData) {
+                    model.presentStatus(reason, level: .info)
+                }
+                return
+            }
+
+            if model.importSession == nil {
+                model.startOrResetSession()
+                model.presentStatus("Session started. Add screenshots and run analysis.", level: .success)
+                return
+            }
+
+            if canOpenPlan {
+                selectedTab = .plan
+                return
+            }
+
+            guard let pageCount = model.importSession?.pages.count, pageCount > 0 else {
+                model.presentStatus("Add at least one screenshot before analysis.", level: .info)
+                return
+            }
+
+            Task {
+                await model.analyzeAllScreenshots()
+            }
+
+        case .plan:
+            guard canOpenPlan else {
+                if let reason = blockedReason(for: .plan) {
+                    model.presentStatus(reason, level: .info)
+                }
+                return
+            }
+
+            if model.moveSteps.isEmpty {
+                model.generateRecommendationGuide()
+            }
+
+            if canOpenApply {
+                selectedTab = .apply
+            }
+
+        case .apply:
+            guard canOpenApply else {
+                if let reason = blockedReason(for: .apply) {
+                    model.presentStatus(reason, level: .info)
+                }
+                return
+            }
+
+            if model.allMovesCompleted {
+                model.presentStatus("All move steps are complete.", level: .success)
+            } else {
+                model.markNextMoveStepComplete()
+            }
+        }
+    }
+
+    private func deckPrimaryLabel(for tab: Tab) -> String {
+        switch tab {
+        case .setup:
+            return canOpenImport ? "Continue To Import" : "Save Profile & Continue"
+        case .importData:
+            if model.importSession == nil {
+                return "Start Import Session"
+            }
+            if canOpenPlan {
+                return "Continue To Plan"
+            }
+            if model.importSession?.pages.isEmpty ?? true {
+                return "Add Screenshots"
+            }
+            return "Analyze Screenshots"
+        case .plan:
+            return canOpenApply ? "Continue To Apply" : "Generate Recommendation"
+        case .apply:
+            return model.allMovesCompleted ? "Checklist Complete" : "Mark Next Move"
+        }
+    }
+
+    private func stageGuidanceText(for tab: Tab) -> String? {
+        switch tab {
+        case .setup:
+            return hasSavedProfile ? "Profile is ready. Continue to Import when you want." : "Create your first profile to unlock the rest of the flow."
+        case .importData:
+            guard !canOpenPlan else {
+                return nil
+            }
+            if model.importSession == nil {
+                return "Start an import session, then add screenshots."
+            }
+            if model.detectedSlots.isEmpty {
+                return "Run analysis after adding screenshots."
+            }
+            if model.hasSlotConflicts {
+                return "Fix duplicate slot conflicts before proceeding."
+            }
+            return nil
+        case .plan:
+            if !canGeneratePlan {
+                return "Plan unlocks after setup and clean import analysis."
+            }
+            return model.moveSteps.isEmpty ? "Generate your first recommendation to unlock Apply." : nil
+        case .apply:
+            return canOpenApply ? "Work through each move in order." : "Generate a recommendation in Plan first."
+        }
+    }
+
+    private var bypassGuidedTabValidation: Bool {
+        ProcessInfo.processInfo.arguments.contains("-uitesting-unlock-tabs")
+    }
+
+    private var hasSavedProfile: Bool {
+        model.selectedProfileID != nil || !model.savedProfiles.isEmpty
+    }
+
+    private var canOpenImport: Bool {
+        hasSavedProfile
+    }
+
+    private var canOpenPlan: Bool {
+        canOpenImport && model.importSession != nil && !model.detectedSlots.isEmpty && !model.hasSlotConflicts
+    }
+
+    private var canGeneratePlan: Bool {
+        canOpenPlan && model.selectedProfileID != nil
+    }
+
+    private var canOpenApply: Bool {
+        !model.moveSteps.isEmpty
+    }
+
+    private func canAccess(_ tab: Tab) -> Bool {
+        if bypassGuidedTabValidation {
+            return true
+        }
+
+        switch tab {
+        case .setup:
+            return true
+        case .importData:
+            return canOpenImport
+        case .plan:
+            return canOpenPlan
+        case .apply:
+            return canOpenApply
+        }
+    }
+
+    private func blockedReason(for tab: Tab) -> String? {
+        switch tab {
+        case .setup:
+            return nil
+        case .importData:
+            return canOpenImport ? nil : "Complete Setup first by saving a profile."
+        case .plan:
+            if !canOpenImport {
+                return "Complete Setup first by saving a profile."
+            }
+            if model.importSession == nil {
+                return "Start an import session before opening Plan."
+            }
+            if model.detectedSlots.isEmpty {
+                return "Analyze screenshots in Import before opening Plan."
+            }
+            if model.hasSlotConflicts {
+                return "Resolve slot conflicts in Import before opening Plan."
+            }
+            return nil
+        case .apply:
+            return canOpenApply ? nil : "Generate a recommendation in Plan before opening Apply."
+        }
+    }
+
+    private func firstIncompleteTab() -> Tab {
+        if !canOpenImport {
+            return .setup
+        }
+        if !canOpenPlan {
+            return .importData
+        }
+        if !canOpenApply {
+            return .plan
+        }
+        return .apply
+    }
+
+    private func tabBarIcon(for tab: Tab) -> String {
+        if canAccess(tab) {
+            return tab.icon
+        }
+        return "lock.fill"
+    }
+
     private var calibrationCompletion: Double {
         let parts = model.calibrationProgressLabel.split(separator: "/")
         guard parts.count == 2,
@@ -1150,13 +1552,13 @@ struct RootView: View {
         case .setup:
             var score = 0.0
             if !model.profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                score += 0.20
+                score += 0.15
             }
             if model.canSubmitProfile {
                 score += 0.20
             }
-            if !model.savedProfiles.isEmpty {
-                score += 0.40
+            if hasSavedProfile {
+                score += 0.45
             }
             if !model.lastCalibrationMap.slotWeights.isEmpty {
                 score += 0.20
@@ -1166,10 +1568,10 @@ struct RootView: View {
         case .importData:
             var score = 0.0
             if model.importSession != nil {
-                score += 0.20
+                score += 0.25
             }
             if let pageCount = model.importSession?.pages.count, pageCount > 0 {
-                score += 0.30
+                score += 0.25
             }
             if !model.detectedSlots.isEmpty {
                 score += 0.35
@@ -1182,10 +1584,10 @@ struct RootView: View {
         case .plan:
             var score = 0.0
             if model.selectedProfileID != nil {
-                score += 0.25
+                score += 0.20
             }
             if !model.importedUsageEntries.isEmpty || model.nativeScreenTimeAuthorized || !model.usageDraftByNormalizedName.isEmpty {
-                score += 0.25
+                score += 0.30
             }
             if model.simulationSummary != nil {
                 score += 0.25
@@ -1213,52 +1615,6 @@ struct RootView: View {
         default:
             return "Ready (\(completion)%)"
         }
-    }
-
-    private enum PipelineState {
-        case active
-        case ready
-        case upcoming
-
-        var icon: String {
-            switch self {
-            case .active:
-                return "record.circle"
-            case .ready:
-                return "checkmark.circle.fill"
-            case .upcoming:
-                return "circle"
-            }
-        }
-
-        var foreground: Color {
-            switch self {
-            case .active:
-                return .white
-            case .ready:
-                return Color(.label)
-            case .upcoming:
-                return .secondary
-            }
-        }
-
-        var background: Color {
-            switch self {
-            case .active:
-                return Color.accentColor
-            case .ready:
-                return Color(.secondarySystemFill)
-            case .upcoming:
-                return Color(.quaternarySystemFill)
-            }
-        }
-    }
-
-    private func pipelineState(for tab: Tab) -> PipelineState {
-        if selectedTab == tab {
-            return .active
-        }
-        return stageCompletion(for: tab) >= 0.85 ? .ready : .upcoming
     }
 
     private func tabStepIndex(_ tab: Tab) -> Int {
@@ -1475,6 +1831,29 @@ final class RootViewModel: ObservableObject {
 
     func displayName(for appID: UUID) -> String {
         appNamesByID[appID] ?? "Unknown App"
+    }
+
+    func presentStatus(_ message: String, level: StatusLevel = .info) {
+        showStatus(message, level: level)
+    }
+
+    func loadSelectedProfileIntoEditor() {
+        guard let profile = activeProfile() else {
+            showStatus("Select a profile first.", level: .info)
+            return
+        }
+
+        profileName = profile.name
+        context = profile.context
+        handedness = profile.handedness
+        gripMode = profile.gripMode
+        utilityWeight = profile.goalWeights.utility
+        flowWeight = profile.goalWeights.flow
+        aestheticsWeight = profile.goalWeights.aesthetics
+        moveCostWeight = profile.goalWeights.moveCost
+        lastCalibrationMap = profile.reachabilityMap
+
+        showStatus("Loaded \"\(profile.name)\" into editor.", level: .success)
     }
 
     func bindingForUsageMinutes(appName: String) -> Binding<String> {

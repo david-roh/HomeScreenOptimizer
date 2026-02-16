@@ -8,6 +8,7 @@ final class NativeScreenTimeSmokeTests: XCTestCase {
 
     func testRecommendationSectionShowsScreenTimeControls() {
         let app = XCUIApplication()
+        app.launchArguments.append("-uitesting-unlock-tabs")
         app.launch()
 
         XCTAssertTrue(app.staticTexts["HomeScreenOptimizer"].waitForExistence(timeout: 8))
