@@ -50,19 +50,27 @@ jobs:
         id: simulator
         run: |
           set -euo pipefail
-          SIM_ID="$(xcrun simctl list devices available iOS | awk -F '[()]' '/iPhone/ {print $2; exit}')"
-          if [[ -z "${SIM_ID}" ]]; then
-            echo "No available iPhone simulator found on runner."
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "jq is required to parse xcodebuild destinations."
             exit 1
           fi
-          echo "simulator_id=${SIM_ID}" >> "${GITHUB_OUTPUT}"
+          DESTINATION="$(
+            xcodebuild -project HomeScreenOptimizerApp.xcodeproj -scheme HomeScreenOptimizeriOS -showdestinations -json \
+              | jq -r '.[]?.destinations[]? | select(.platform == "iOS Simulator" and (.name | startswith("iPhone")) and (.error == null)) | "platform=iOS Simulator,id=\(.id)"' \
+              | head -n 1
+          )"
+          if [[ -z "${DESTINATION}" ]]; then
+            echo "No available iPhone simulator destination found on runner."
+            exit 1
+          fi
+          echo "destination=${DESTINATION}" >> "${GITHUB_OUTPUT}"
       - name: Run iOS tests (unit + UI)
         run: |
           set -euo pipefail
           xcodebuild \
             -project HomeScreenOptimizerApp.xcodeproj \
             -scheme HomeScreenOptimizeriOS \
-            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.simulator_id }}" \
+            -destination "${{ steps.simulator.outputs.destination }}" \
             -resultBundlePath TestResults.xcresult \
             test
       - name: Upload iOS test bundle
