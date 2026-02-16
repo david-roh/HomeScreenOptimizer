@@ -54,7 +54,7 @@ jobs:
             echo "jq is required to parse xcodebuild destinations."
             exit 1
           fi
-          DEST_JSON="$(xcodebuild -project HomeScreenOptimizerApp.xcodeproj -scheme HomeScreenOptimizeriOS -showdestinations -json 2>/dev/null | sed -n '/^\\[/,$p')"
+          DEST_JSON="$(xcodebuild -project HomeScreenOptimizerApp.xcodeproj -scheme HomeScreenOptimizeriOS -showdestinations -json 2>/dev/null | sed -n '/^\[/,$p')"
           if [[ -z "${DEST_JSON}" ]]; then
             echo "xcodebuild did not return destination JSON."
             exit 1
