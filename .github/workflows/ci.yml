@@ -54,14 +54,17 @@ jobs:
             echo "jq is required to parse xcodebuild destinations."
             exit 1
           fi
-          DEST_JSON="$(xcodebuild -project HomeScreenOptimizerApp.xcodeproj -scheme HomeScreenOptimizeriOS -showdestinations -json 2>/dev/null | sed -n '/^\[/,$p')"
+          DEST_JSON="$(
+            xcodebuild -project HomeScreenOptimizerApp.xcodeproj -scheme HomeScreenOptimizeriOS -showdestinations -json 2>/dev/null \
+              | awk 'BEGIN { emit = 0 } /^[[:space:]]*[\[{]/ { emit = 1 } emit { print }'
+          )"
           if [[ -z "${DEST_JSON}" ]]; then
             echo "xcodebuild did not return destination JSON."
             exit 1
           fi
           DESTINATION="$(
             printf '%s' "${DEST_JSON}" \
-              | jq -r '.[]?.destinations[]? | select(.platform == "iOS Simulator" and (.name | startswith("iPhone")) and (.error == null)) | "platform=iOS Simulator,id=\(.id)"' \
+              | jq -r '.. | objects | .destinations? // empty | .[] | select(.platform == "iOS Simulator" and (.name | startswith("iPhone")) and ((.error // null) == null)) | "platform=iOS Simulator,id=\(.id)"' \
               | head -n 1
           )"
           if [[ -z "${DESTINATION}" ]]; then
