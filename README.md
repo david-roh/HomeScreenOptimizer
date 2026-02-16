@@ -1,4 +1,5 @@
 # Home Screen Optimizer
+[![CI](https://github.com/david-roh/HomeScreenOptimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/david-roh/HomeScreenOptimizer/actions/workflows/ci.yml)
 
 This repository contains the MVP foundation for an iOS home-screen layout optimizer.
 
@@ -42,6 +43,12 @@ Then in Xcode:
 ### Native Screen Time notes
 - The app now includes a Device Activity Report extension and app-group bridge for native usage snapshots.
 - You still need Apple Family Controls entitlement approval on your developer account for full on-device/live-data behavior outside local simulator signing.
+
+## CI
+- Workflow: [CI](https://github.com/david-roh/HomeScreenOptimizer/actions/workflows/ci.yml)
+- Runs on push/PR:
+  - Swift package build + tests + prototype smoke run.
+  - iOS simulator test job (unit tests + UI smoke test) with artifacted `.xcresult`.
 
 ## Key docs
 - Backlog: `IMPLEMENTATION_BACKLOG.md`
