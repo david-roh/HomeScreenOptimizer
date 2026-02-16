@@ -6,6 +6,16 @@ import XCTest
 
 @MainActor
 final class RootViewModelTests: XCTestCase {
+    func testCanSubmitProfileFalseWhenAllWeightsZero() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        model.utilityWeight = 0
+        model.flowWeight = 0
+        model.aestheticsWeight = 0
+        model.moveCostWeight = 0
+
+        XCTAssertFalse(model.canSubmitProfile)
+    }
+
     func testAdjustDetectedSlotClampsToSupportedBounds() {
         let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
         model.importSession = ScreenshotImportSession(
@@ -100,6 +110,14 @@ final class RootViewModelTests: XCTestCase {
         XCTAssertEqual(model.completedMoveCount, 1)
     }
 
+    func testMarkNextMoveStepCompleteNoOpWhenNoSteps() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+
+        model.markNextMoveStepComplete()
+
+        XCTAssertEqual(model.completedMoveCount, 0)
+    }
+
     func testToggleMoveStepCompletionCanUncheck() throws {
         let model = configuredModelWithGeneratedGuide()
         let stepID = try XCTUnwrap(model.moveSteps.first?.id)
@@ -136,6 +154,17 @@ final class RootViewModelTests: XCTestCase {
 
         XCTAssertFalse(model.historyComparisonMessage.isEmpty)
         XCTAssertTrue(model.historyComparisonMessage.contains("Vs "))
+    }
+
+    func testCompareAgainstHistoryWithCurrentPlanClearsComparisonMessage() throws {
+        let model = configuredModelWithGeneratedGuide()
+        model.generateRecommendationGuide()
+        model.historyComparisonMessage = "Previously set"
+
+        let currentPlanID = try XCTUnwrap(model.activeRecommendationPlanID)
+        model.compareAgainstHistory(planID: currentPlanID)
+
+        XCTAssertTrue(model.historyComparisonMessage.isEmpty)
     }
 
     func testHandleProfileSelectionChangeClearsChecklistWhenNoDraftForSelectedProfile() {
@@ -183,6 +212,15 @@ final class RootViewModelTests: XCTestCase {
 
         XCTAssertEqual(model.completedMoveCount, completedCount)
         XCTAssertFalse(model.moveSteps.isEmpty)
+    }
+
+    func testAllMovesCompletedTrueWhenEveryStepIsChecked() {
+        let model = configuredModelWithGeneratedGuide()
+        XCTAssertFalse(model.moveSteps.isEmpty)
+
+        model.moveSteps.forEach { model.toggleMoveStepCompletion($0.id) }
+
+        XCTAssertTrue(model.allMovesCompleted)
     }
 
     private func configuredModelWithGeneratedGuide() -> RootViewModel {

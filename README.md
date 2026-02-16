@@ -25,6 +25,8 @@ This repository contains the MVP foundation for an iOS home-screen layout optimi
 ```bash
 swift build
 swift test
+swift test --enable-code-coverage
+./scripts/check_coverage.sh 80
 swift run HSOPrototype
 ```
 
@@ -47,7 +49,7 @@ Then in Xcode:
 ## CI
 - Workflow: [CI](https://github.com/david-roh/HomeScreenOptimizer/actions/workflows/ci.yml)
 - Runs on push/PR:
-  - Swift package build + tests + prototype smoke run.
+  - Swift package build + tests + line-coverage gate (>=80%) + prototype smoke run.
   - iOS simulator test job (unit tests + UI smoke test) with artifacted `.xcresult`.
 
 ## Key docs
