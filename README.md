@@ -15,6 +15,7 @@ This repository contains the MVP foundation for an iOS home-screen layout optimi
 - Reachability-aware layout planner with generated manual move guide.
 - Guided apply checklist with per-profile progress persistence.
 - Recommendation history persistence with rerun score/move comparison.
+- Local analytics event logging for guide generation and guided-apply progress.
 - iOS SwiftUI shell app target with simulator support.
 - CI workflow with build and tests.
 

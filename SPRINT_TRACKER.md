@@ -92,7 +92,14 @@
   - App shows recent history rows with timestamp and aggregate score.
   - Current run can be compared against previous runs for score and move-count delta.
 
+### E9-T1 Local analytics hooks
+- Status: IN_PROGRESS
+- Notes:
+  - File-backed analytics event logging added in `Privacy` module.
+  - Events now tracked for guide generation, guided-apply start/progress/reset/completion, and history compare actions.
+  - Logging stays local-only (no network transport).
+
 ## Next immediate tasks
-1. Add analytics event hooks for guided-apply start/progress/completion.
-2. Add guide completion export/share summary for user follow-through.
-3. Add stronger OCR correction aids for low-confidence usage rows.
+1. Add guide completion export/share summary for user follow-through.
+2. Add stronger OCR correction aids for low-confidence usage rows.
+3. Add profile-level dashboard surfacing history + checklist completion rate.

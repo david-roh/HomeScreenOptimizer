@@ -4,6 +4,7 @@ import Guide
 import Ingestion
 import Optimizer
 import PhotosUI
+import Privacy
 import Profiles
 import Simulation
 import SwiftUI
@@ -624,6 +625,7 @@ final class RootViewModel: ObservableObject {
     private let layoutPlanRepository: FileLayoutPlanRepository
     private let usageRepository: FileUsageSnapshotRepository
     private let guidedApplyDraftRepository: FileGuidedApplyDraftRepository
+    private let analyticsEventRepository: FileAnalyticsEventRepository
     private let importCoordinator: ScreenshotImportCoordinator
     private let ocrExtractor: any LayoutOCRExtracting
     private let ocrPostProcessor = OCRPostProcessor()
@@ -654,6 +656,7 @@ final class RootViewModel: ObservableObject {
         layoutPlanRepository = FileLayoutPlanRepository(fileURL: baseURL.appendingPathComponent("layout_plans.json"))
         usageRepository = FileUsageSnapshotRepository(fileURL: baseURL.appendingPathComponent("usage_snapshots.json"))
         guidedApplyDraftRepository = FileGuidedApplyDraftRepository(fileURL: baseURL.appendingPathComponent("guided_apply_drafts.json"))
+        analyticsEventRepository = FileAnalyticsEventRepository(fileURL: baseURL.appendingPathComponent("analytics_events.json"))
         let importRepository = FileScreenshotImportSessionRepository(fileURL: baseURL.appendingPathComponent("import_sessions.json"))
         importCoordinator = ScreenshotImportCoordinator(repository: importRepository)
 
@@ -1042,6 +1045,22 @@ final class RootViewModel: ObservableObject {
             historyComparisonMessage = ""
         }
 
+        trackAnalyticsEvent(
+            .guideGenerated,
+            profileID: profile.id,
+            planID: generated.recommendedPlan.id,
+            payload: [
+                "move_count": String(planMoves.count),
+                "score_delta": String(format: "%.3f", simulation.aggregateScoreDelta)
+            ]
+        )
+        trackAnalyticsEvent(
+            .guidedApplyStarted,
+            profileID: profile.id,
+            planID: generated.recommendedPlan.id,
+            payload: ["total_steps": String(planMoves.count)]
+        )
+
         showStatus("Generated guide with \(planMoves.count) moves.", level: .success)
     }
 
@@ -1129,13 +1148,19 @@ final class RootViewModel: ObservableObject {
     }
 
     func toggleMoveStepCompletion(_ stepID: UUID) {
+        let inserted: Bool
         if completedMoveStepIDs.contains(stepID) {
             completedMoveStepIDs.remove(stepID)
+            inserted = false
         } else {
             completedMoveStepIDs.insert(stepID)
+            inserted = true
         }
 
         persistGuidedApplyDraft()
+        if inserted {
+            trackChecklistProgress(stepID: stepID)
+        }
     }
 
     func markNextMoveStepComplete() {
@@ -1145,11 +1170,16 @@ final class RootViewModel: ObservableObject {
 
         completedMoveStepIDs.insert(next)
         persistGuidedApplyDraft()
+        trackChecklistProgress(stepID: next)
     }
 
     func resetMoveProgress() {
         completedMoveStepIDs = []
         persistGuidedApplyDraft()
+        trackAnalyticsEvent(
+            .guidedApplyReset,
+            payload: ["total_steps": String(moveSteps.count)]
+        )
     }
 
     func compareAgainstHistory(planID: UUID) {
@@ -1172,6 +1202,11 @@ final class RootViewModel: ObservableObject {
             baselinePlan: baseline,
             currentAssignments: currentLayoutAssignments,
             currentMoveCount: moveSteps.count
+        )
+        trackAnalyticsEvent(
+            .historyCompared,
+            planID: currentPlanID,
+            payload: ["baseline_plan_id": baseline.id.uuidString]
         )
     }
 
@@ -1445,6 +1480,45 @@ final class RootViewModel: ObservableObject {
         )
 
         return "Vs \(baselineDate): \(String(format: "%+.3f", scoreDelta)) score, \(moveText)."
+    }
+
+    private func trackChecklistProgress(stepID: UUID) {
+        trackAnalyticsEvent(
+            .guidedApplyStepCompleted,
+            stepID: stepID,
+            payload: [
+                "completed_steps": String(completedMoveCount),
+                "total_steps": String(moveSteps.count)
+            ]
+        )
+
+        if allMovesCompleted {
+            trackAnalyticsEvent(
+                .guidedApplyCompleted,
+                payload: ["total_steps": String(moveSteps.count)]
+            )
+        }
+    }
+
+    private func trackAnalyticsEvent(
+        _ name: AnalyticsEventName,
+        profileID: UUID? = nil,
+        planID: UUID? = nil,
+        stepID: UUID? = nil,
+        payload: [String: String] = [:]
+    ) {
+        do {
+            let event = AnalyticsEvent(
+                name: name,
+                profileID: profileID ?? selectedProfileID,
+                planID: planID ?? activeRecommendationPlanID,
+                stepID: stepID,
+                payload: payload
+            )
+            try analyticsEventRepository.append(event)
+        } catch {
+            showStatus("Analytics log failed: \(error.localizedDescription)", level: .error)
+        }
     }
 
     private func resetRecommendationOutput() {
