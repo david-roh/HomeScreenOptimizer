@@ -9,19 +9,31 @@
 /* Begin PBXBuildFile section */
 		0077522EB233EA9E74EA6942 /* Privacy in Frameworks */ = {isa = PBXBuildFile; productRef = 1B96ED3FA7644DE126125AB0 /* Privacy */; };
 		377775027603DB223FE6C527 /* Ingestion in Frameworks */ = {isa = PBXBuildFile; productRef = 3188D7D2472EC5570B30A73C /* Ingestion */; };
+		3EE99F13D579FD57A0425724 /* HomeScreenUsageReportExtension.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = 84A188C9EF78983B65C6BC15 /* HomeScreenUsageReportExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		6052741A5F7832968EFA97A1 /* Profiles in Frameworks */ = {isa = PBXBuildFile; productRef = 069A9C72A2AE77037651510A /* Profiles */; };
 		648B229EE38ED02741CC3C15 /* HomeScreenOptimizeriOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D21AF8BA2185F422EC33CC82 /* HomeScreenOptimizeriOSApp.swift */; };
 		729426D8D3CC7C7BC70A2880 /* Simulation in Frameworks */ = {isa = PBXBuildFile; productRef = 9BE6D6B76CC3349901C618BD /* Simulation */; };
 		7C9BA7747C8D4EEAB4ED0E6F /* Guide in Frameworks */ = {isa = PBXBuildFile; productRef = 6858C5D5DFA330EFE748AE53 /* Guide */; };
+		80C0C96CFD2B928B352FB95D /* UsageSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64E5071554F7DD14AE9678A /* UsageSummaryView.swift */; };
+		98EBBF8BCA99A6BA0E834309 /* UsageSummaryReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD590DAB09D42FC5F672B9E /* UsageSummaryReport.swift */; };
+		9BDE9F654E743BA354A26D63 /* HomeScreenUsageReportExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD53427F6FB7CB3E3FF4E4E0 /* HomeScreenUsageReportExtension.swift */; };
 		B135114CA54CB6010B4EF35E /* Core in Frameworks */ = {isa = PBXBuildFile; productRef = 197321D8BEFC80F109D113E2 /* Core */; };
 		BF0F01A88DD482513CC1A2D7 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB18E163BDDECDA4126B81A5 /* RootView.swift */; };
 		CB36C858316F96BA23254FEC /* RootViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0D6D9D1C2B010F43786E5D /* RootViewModelTests.swift */; };
 		D47CF2204CFE593E1C4E7639 /* HomeScreenOptimizeriOSTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA5A3705EEE7A1967AF7E00 /* HomeScreenOptimizeriOSTests.swift */; };
+		E26889F0F0CE9E71CB009CBB /* Ingestion in Frameworks */ = {isa = PBXBuildFile; productRef = 95381A1ACBEDB3D8BAA16F1D /* Ingestion */; };
 		E668CBE5A6D1D4AB7251D508 /* Usage in Frameworks */ = {isa = PBXBuildFile; productRef = B3DCFBE7E5989913326E4742 /* Usage */; };
 		FA82762DD7BD0703FE0B6079 /* Optimizer in Frameworks */ = {isa = PBXBuildFile; productRef = 85826957B3729DB98F214ABB /* Optimizer */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		1D20363DB3192996CA6337FF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C8AD542DDB5E526C9DDA384D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CF37351C05D3DD2801739CDF;
+			remoteInfo = HomeScreenUsageReportExtension;
+		};
 		41F7A4109868AA39B29C09D7 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = C8AD542DDB5E526C9DDA384D /* Project object */;
@@ -31,17 +43,45 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		20C2273FD031F8A5F998A5C2 /* Embed ExtensionKit Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
+			dstSubfolderSpec = 16;
+			files = (
+				3EE99F13D579FD57A0425724 /* HomeScreenUsageReportExtension.appex in Embed ExtensionKit Extensions */,
+			);
+			name = "Embed ExtensionKit Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		451B20FB6C3E7AF19B14A06A /* HomeScreenUsageReportExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HomeScreenUsageReportExtension.entitlements; sourceTree = "<group>"; };
 		69CC611867AAEBF47EB5603B /* HomeScreenOptimizeriOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HomeScreenOptimizeriOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7305AF2F30DDF10053FD5D1F /* HomeScreenOptimizeriOSTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HomeScreenOptimizeriOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		84A188C9EF78983B65C6BC15 /* HomeScreenUsageReportExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = HomeScreenUsageReportExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		8CA5A3705EEE7A1967AF7E00 /* HomeScreenOptimizeriOSTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreenOptimizeriOSTests.swift; sourceTree = "<group>"; };
+		969424125D6FA48324FA7872 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		A64E5071554F7DD14AE9678A /* UsageSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSummaryView.swift; sourceTree = "<group>"; };
 		A7F676E9B101BDFFFEF65EC0 /* New project */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "New project"; path = .; sourceTree = SOURCE_ROOT; };
+		BAD590DAB09D42FC5F672B9E /* UsageSummaryReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSummaryReport.swift; sourceTree = "<group>"; };
+		CD53427F6FB7CB3E3FF4E4E0 /* HomeScreenUsageReportExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreenUsageReportExtension.swift; sourceTree = "<group>"; };
 		D21AF8BA2185F422EC33CC82 /* HomeScreenOptimizeriOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreenOptimizeriOSApp.swift; sourceTree = "<group>"; };
 		DC0D6D9D1C2B010F43786E5D /* RootViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootViewModelTests.swift; sourceTree = "<group>"; };
 		EB18E163BDDECDA4126B81A5 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		3F92F602835A86850754C8E9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E26889F0F0CE9E71CB009CBB /* Ingestion in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DA48151530D33E7798DE75AA /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -84,6 +124,7 @@
 			isa = PBXGroup;
 			children = (
 				B7BCFB8B569567281306F2F4 /* Packages */,
+				C3762696321F62C885C6302E /* ScreenTimeReportExtension */,
 				6DF082BC390CB45E5568B5F5 /* Sources */,
 				677043C29E704E0DEF96D9EC /* Tests */,
 				B16AA2A7C04EE004406922E4 /* Products */,
@@ -95,6 +136,7 @@
 			children = (
 				69CC611867AAEBF47EB5603B /* HomeScreenOptimizeriOS.app */,
 				7305AF2F30DDF10053FD5D1F /* HomeScreenOptimizeriOSTests.xctest */,
+				84A188C9EF78983B65C6BC15 /* HomeScreenUsageReportExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -107,6 +149,19 @@
 			name = Packages;
 			sourceTree = "<group>";
 		};
+		C3762696321F62C885C6302E /* ScreenTimeReportExtension */ = {
+			isa = PBXGroup;
+			children = (
+				451B20FB6C3E7AF19B14A06A /* HomeScreenUsageReportExtension.entitlements */,
+				CD53427F6FB7CB3E3FF4E4E0 /* HomeScreenUsageReportExtension.swift */,
+				969424125D6FA48324FA7872 /* Info.plist */,
+				BAD590DAB09D42FC5F672B9E /* UsageSummaryReport.swift */,
+				A64E5071554F7DD14AE9678A /* UsageSummaryView.swift */,
+			);
+			name = ScreenTimeReportExtension;
+			path = App/ScreenTimeReportExtension;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -116,10 +171,12 @@
 			buildPhases = (
 				75CE13412A021D3F39E2E7C4 /* Sources */,
 				DA48151530D33E7798DE75AA /* Frameworks */,
+				20C2273FD031F8A5F998A5C2 /* Embed ExtensionKit Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				4C31B96BCE64EE76A6B6B650 /* PBXTargetDependency */,
 			);
 			name = HomeScreenOptimizeriOS;
 			packageProductDependencies = (
@@ -154,6 +211,25 @@
 			productReference = 7305AF2F30DDF10053FD5D1F /* HomeScreenOptimizeriOSTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		CF37351C05D3DD2801739CDF /* HomeScreenUsageReportExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AE55C4EC8AF592D483488277 /* Build configuration list for PBXNativeTarget "HomeScreenUsageReportExtension" */;
+			buildPhases = (
+				4F0F9C48094E68B0227564A8 /* Sources */,
+				3F92F602835A86850754C8E9 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HomeScreenUsageReportExtension;
+			packageProductDependencies = (
+				95381A1ACBEDB3D8BAA16F1D /* Ingestion */,
+			);
+			productName = HomeScreenUsageReportExtension;
+			productReference = 84A188C9EF78983B65C6BC15 /* HomeScreenUsageReportExtension.appex */;
+			productType = "com.apple.product-type.extensionkit-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -167,6 +243,9 @@
 						DevelopmentTeam = "";
 					};
 					A83E46F9A7F349371D52F65F = {
+						DevelopmentTeam = "";
+					};
+					CF37351C05D3DD2801739CDF = {
 						DevelopmentTeam = "";
 					};
 				};
@@ -190,11 +269,22 @@
 			targets = (
 				8F5AB4640E5586BF93276AB1 /* HomeScreenOptimizeriOS */,
 				A83E46F9A7F349371D52F65F /* HomeScreenOptimizeriOSTests */,
+				CF37351C05D3DD2801739CDF /* HomeScreenUsageReportExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
+		4F0F9C48094E68B0227564A8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9BDE9F654E743BA354A26D63 /* HomeScreenUsageReportExtension.swift in Sources */,
+				98EBBF8BCA99A6BA0E834309 /* UsageSummaryReport.swift in Sources */,
+				80C0C96CFD2B928B352FB95D /* UsageSummaryView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		75CE13412A021D3F39E2E7C4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -216,6 +306,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		4C31B96BCE64EE76A6B6B650 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CF37351C05D3DD2801739CDF /* HomeScreenUsageReportExtension */;
+			targetProxy = 1D20363DB3192996CA6337FF /* PBXContainerItemProxy */;
+		};
 		EC520A45584D55A9F91DA635 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 8F5AB4640E5586BF93276AB1 /* HomeScreenOptimizeriOS */;
@@ -224,6 +319,26 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		074FC3A68781EAAFCEF13FCB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/ScreenTimeReportExtension/HomeScreenUsageReportExtension.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/ScreenTimeReportExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.davidroh.homescreenoptimizer.usagereport;
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.1;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		481ED3B7596EB320FFE6F21E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -245,6 +360,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/HomeScreenOptimizeriOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -399,10 +515,31 @@
 			};
 			name = Debug;
 		};
+		FB221D1627EA57A16A0D355B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/ScreenTimeReportExtension/HomeScreenUsageReportExtension.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/ScreenTimeReportExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.davidroh.homescreenoptimizer.usagereport;
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.1;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		FB36D42784BC4EFC67F6333B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/HomeScreenOptimizeriOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -449,6 +586,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		AE55C4EC8AF592D483488277 /* Build configuration list for PBXNativeTarget "HomeScreenUsageReportExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				074FC3A68781EAAFCEF13FCB /* Debug */,
+				FB221D1627EA57A16A0D355B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -482,6 +628,10 @@
 		85826957B3729DB98F214ABB /* Optimizer */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Optimizer;
+		};
+		95381A1ACBEDB3D8BAA16F1D /* Ingestion */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Ingestion;
 		};
 		9BE6D6B76CC3349901C618BD /* Simulation */ = {
 			isa = XCSwiftPackageProductDependency;

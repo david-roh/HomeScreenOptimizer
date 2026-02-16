@@ -1,4 +1,10 @@
 import Core
+#if canImport(DeviceActivity)
+import DeviceActivity
+#endif
+#if canImport(FamilyControls)
+import FamilyControls
+#endif
 import Foundation
 import Guide
 import Ingestion
@@ -374,6 +380,44 @@ struct RootView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
+#if canImport(DeviceActivity) && canImport(FamilyControls)
+                    Text("Native Screen Time")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    HStack {
+                        Button(model.nativeScreenTimeAuthorized ? "Refresh Screen Time Access" : "Connect Screen Time") {
+                            Task {
+                                await model.requestNativeScreenTimeAuthorization()
+                            }
+                        }
+
+                        Spacer()
+
+                        Text(model.nativeScreenTimeAuthorizationLabel)
+                            .font(.caption)
+                            .foregroundStyle(model.nativeScreenTimeAuthorized ? .green : .secondary)
+                    }
+
+                    if model.nativeScreenTimeAuthorized {
+                        DeviceActivityReport(
+                            DeviceActivityReport.Context("HSO Usage Summary"),
+                            filter: model.nativeUsageFilter
+                        )
+                        .frame(minHeight: 180)
+
+                        Button("Import Native Screen Time Usage") {
+                            model.importNativeUsageSnapshot()
+                        }
+
+                        if let lastSnapshot = model.nativeScreenTimeLastSnapshotAt {
+                            Text("Last native snapshot: \(lastSnapshot.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+#endif
+
                     PhotosPicker(selection: $selectedUsageItem, matching: .images) {
                         Label("Import Screen Time Screenshot", systemImage: "chart.bar.doc.horizontal")
                     }
@@ -615,6 +659,9 @@ final class RootViewModel: ObservableObject {
     @Published var manualUsageEnabled = false
     @Published var usageDraftByNormalizedName: [String: String] = [:]
     @Published var importedUsageEntries: [ScreenTimeUsageEntry] = []
+    @Published var nativeScreenTimeAuthorized = false
+    @Published var nativeScreenTimeAuthorizationLabel = "Not connected"
+    @Published var nativeScreenTimeLastSnapshotAt: Date?
     @Published var completedMoveStepIDs: Set<UUID> = []
     @Published var activeRecommendationPlanID: UUID?
     @Published var recommendationHistory: [LayoutPlan] = []
@@ -661,6 +708,7 @@ final class RootViewModel: ObservableObject {
         importCoordinator = ScreenshotImportCoordinator(repository: importRepository)
 
         restoreLatestImportSession()
+        refreshNativeScreenTimeAuthorizationState()
     }
 
     var canSubmitProfile: Bool {
@@ -718,6 +766,19 @@ final class RootViewModel: ObservableObject {
     var nextPendingMoveStepID: UUID? {
         moveSteps.first { !completedMoveStepIDs.contains($0.id) }?.id
     }
+
+#if canImport(DeviceActivity)
+    var nativeUsageFilter: DeviceActivityFilter {
+        let interval = DateInterval(
+            start: Calendar.current.startOfDay(for: Date()),
+            end: Date()
+        )
+        return DeviceActivityFilter(
+            segment: .daily(during: interval),
+            devices: .all
+        )
+    }
+#endif
 
     func historyLabel(for plan: LayoutPlan) -> String {
         let when = DateFormatter.localizedString(
@@ -1116,6 +1177,61 @@ final class RootViewModel: ObservableObject {
         }
     }
 
+    func requestNativeScreenTimeAuthorization() async {
+#if canImport(FamilyControls)
+        guard #available(iOS 16.0, *) else {
+            nativeScreenTimeAuthorized = false
+            nativeScreenTimeAuthorizationLabel = "Unsupported iOS"
+            showStatus("Native Screen Time API requires iOS 16+.", level: .info)
+            return
+        }
+
+        do {
+            try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+            refreshNativeScreenTimeAuthorizationState()
+            showStatus("Screen Time access authorized.", level: .success)
+        } catch {
+            refreshNativeScreenTimeAuthorizationState()
+            showStatus("Screen Time authorization failed: \(error.localizedDescription)", level: .error)
+        }
+#else
+        nativeScreenTimeAuthorized = false
+        nativeScreenTimeAuthorizationLabel = "Not available"
+        showStatus("Native Screen Time API is unavailable on this build.", level: .info)
+#endif
+    }
+
+    func importNativeUsageSnapshot() {
+        guard selectedProfileID != nil else {
+            showStatus("Select a profile before importing usage.", level: .error)
+            return
+        }
+
+        guard let defaults = UserDefaults(suiteName: SharedScreenTimeBridge.appGroupID) else {
+            showStatus("Could not access shared Screen Time data.", level: .error)
+            return
+        }
+        guard let data = defaults.data(forKey: SharedScreenTimeBridge.entriesDefaultsKey) else {
+            nativeScreenTimeLastSnapshotAt = defaults.object(forKey: SharedScreenTimeBridge.updatedAtDefaultsKey) as? Date
+            showStatus("No native Screen Time snapshot found yet.", level: .info)
+            return
+        }
+
+        do {
+            let entries = try JSONDecoder().decode([ScreenTimeUsageEntry].self, from: data)
+            guard !entries.isEmpty else {
+                showStatus("Native Screen Time snapshot is empty.", level: .info)
+                return
+            }
+
+            applyImportedUsage(entries)
+            nativeScreenTimeLastSnapshotAt = defaults.object(forKey: SharedScreenTimeBridge.updatedAtDefaultsKey) as? Date
+            showStatus("Imported native Screen Time usage for \(entries.count) apps.", level: .success)
+        } catch {
+            showStatus("Failed to decode native Screen Time snapshot: \(error.localizedDescription)", level: .error)
+        }
+    }
+
     func adjustDetectedSlot(
         index: Int,
         pageDelta: Int = 0,
@@ -1341,6 +1457,42 @@ final class RootViewModel: ObservableObject {
         }
 
         return savedProfiles.first { $0.id == selectedProfileID }
+    }
+
+    private func refreshNativeScreenTimeAuthorizationState() {
+#if canImport(FamilyControls)
+        if #available(iOS 15.0, *) {
+            switch AuthorizationCenter.shared.authorizationStatus {
+            case .approved:
+                nativeScreenTimeAuthorized = true
+                nativeScreenTimeAuthorizationLabel = "Authorized"
+            case .denied:
+                nativeScreenTimeAuthorized = false
+                nativeScreenTimeAuthorizationLabel = "Denied"
+            case .notDetermined:
+                nativeScreenTimeAuthorized = false
+                nativeScreenTimeAuthorizationLabel = "Not connected"
+            @unknown default:
+                nativeScreenTimeAuthorized = false
+                nativeScreenTimeAuthorizationLabel = "Unknown"
+            }
+        } else {
+            nativeScreenTimeAuthorized = false
+            nativeScreenTimeAuthorizationLabel = "Unsupported iOS"
+        }
+#else
+        nativeScreenTimeAuthorized = false
+        nativeScreenTimeAuthorizationLabel = "Not available"
+#endif
+        loadNativeScreenTimeSnapshotTimestamp()
+    }
+
+    private func loadNativeScreenTimeSnapshotTimestamp() {
+        guard let defaults = UserDefaults(suiteName: SharedScreenTimeBridge.appGroupID) else {
+            nativeScreenTimeLastSnapshotAt = nil
+            return
+        }
+        nativeScreenTimeLastSnapshotAt = defaults.object(forKey: SharedScreenTimeBridge.updatedAtDefaultsKey) as? Date
     }
 
     private func loadUsageSnapshotForSelectedProfile() {
@@ -1625,6 +1777,12 @@ final class RootViewModel: ObservableObject {
         let current = calibrationInProgress ? min(completed + 1, max(total, 1)) : completed
         calibrationProgressLabel = "\(current)/\(max(total, 1))"
     }
+}
+
+private enum SharedScreenTimeBridge {
+    static let appGroupID = "group.com.davidroh.hso"
+    static let entriesDefaultsKey = "native_screen_time_usage_entries"
+    static let updatedAtDefaultsKey = "native_screen_time_usage_updated_at"
 }
 
 enum StatusLevel {

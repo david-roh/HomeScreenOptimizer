@@ -51,6 +51,14 @@
   - Screen Time screenshot OCR import now auto-fills usage minutes.
   - Parser now handles locale-friendly duration variants (`1 h 20 min`, `2,5 h`, `1.30`).
 
+### E3-T1 Screen Time permission and connector
+- Status: IN_PROGRESS
+- Notes:
+  - FamilyControls authorization flow added to app UI with status indicators.
+  - Native DeviceActivity report extension added and embedded via ExtensionKit target.
+  - Native usage snapshot bridge (app group + shared defaults) now imports per-app minutes without screenshot OCR.
+  - Last snapshot timestamp is surfaced in UI to confirm fresh native data capture.
+
 ### E4-T1 Onboarding profile setup
 - Status: DONE
 - Notes:
