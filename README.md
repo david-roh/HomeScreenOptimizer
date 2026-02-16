@@ -12,6 +12,7 @@ This repository contains the MVP foundation for an iOS home-screen layout optimi
 - Manual usage input (minutes/day) with per-profile persistence.
 - Screen Time screenshot OCR import to auto-fill manual usage inputs.
 - Reachability-aware layout planner with generated manual move guide.
+- Guided apply checklist with per-profile progress persistence.
 - iOS SwiftUI shell app target with simulator support.
 - CI workflow with build and tests.
 

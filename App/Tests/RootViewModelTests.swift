@@ -89,6 +89,97 @@ final class RootViewModelTests: XCTestCase {
 
         XCTAssertEqual(model.usageEditorAppNames, ["Mail", "Maps"])
     }
+
+    func testMarkNextMoveStepCompleteAdvancesProgress() {
+        let model = configuredModelWithGeneratedGuide()
+        XCTAssertFalse(model.moveSteps.isEmpty)
+        XCTAssertEqual(model.completedMoveCount, 0)
+
+        model.markNextMoveStepComplete()
+
+        XCTAssertEqual(model.completedMoveCount, 1)
+    }
+
+    func testToggleMoveStepCompletionCanUncheck() throws {
+        let model = configuredModelWithGeneratedGuide()
+        let stepID = try XCTUnwrap(model.moveSteps.first?.id)
+
+        model.toggleMoveStepCompletion(stepID)
+        XCTAssertTrue(model.completedMoveStepIDs.contains(stepID))
+
+        model.toggleMoveStepCompletion(stepID)
+        XCTAssertFalse(model.completedMoveStepIDs.contains(stepID))
+    }
+
+    func testHandleProfileSelectionChangeClearsChecklistWhenNoDraftForSelectedProfile() {
+        let model = configuredModelWithGeneratedGuide()
+        let otherProfile = Profile(
+            name: "Other",
+            context: .weekend,
+            handedness: .left,
+            gripMode: .twoHand
+        )
+
+        model.savedProfiles.append(otherProfile)
+        XCTAssertFalse(model.moveSteps.isEmpty)
+
+        model.selectedProfileID = otherProfile.id
+        model.handleProfileSelectionChange()
+
+        XCTAssertTrue(model.moveSteps.isEmpty)
+        XCTAssertTrue(model.completedMoveStepIDs.isEmpty)
+    }
+
+    func testHandleProfileSelectionChangeRestoresPersistedChecklistForProfile() {
+        let model = configuredModelWithGeneratedGuide()
+        let profileID = model.selectedProfileID
+        XCTAssertEqual(model.completedMoveCount, 0)
+
+        model.markNextMoveStepComplete()
+        let completedCount = model.completedMoveCount
+        XCTAssertGreaterThan(completedCount, 0)
+
+        let otherProfile = Profile(
+            name: "Other",
+            context: .weekend,
+            handedness: .left,
+            gripMode: .twoHand
+        )
+        model.savedProfiles.append(otherProfile)
+        model.selectedProfileID = otherProfile.id
+        model.handleProfileSelectionChange()
+        XCTAssertEqual(model.completedMoveCount, 0)
+        XCTAssertTrue(model.moveSteps.isEmpty)
+
+        model.selectedProfileID = profileID
+        model.handleProfileSelectionChange()
+
+        XCTAssertEqual(model.completedMoveCount, completedCount)
+        XCTAssertFalse(model.moveSteps.isEmpty)
+    }
+
+    private func configuredModelWithGeneratedGuide() -> RootViewModel {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        let profile = Profile(
+            name: "Tester",
+            context: .workday,
+            handedness: .right,
+            gripMode: .oneHand
+        )
+
+        model.savedProfiles = [profile]
+        model.selectedProfileID = profile.id
+        model.detectedSlots = [
+            DetectedAppSlot(appName: "Alpha", confidence: 0.10, slot: Slot(page: 0, row: 0, column: 0)),
+            DetectedAppSlot(appName: "Beta", confidence: 0.95, slot: Slot(page: 0, row: 5, column: 3))
+        ]
+        model.manualUsageEnabled = true
+        model.bindingForUsageMinutes(appName: "Alpha").wrappedValue = "120"
+        model.bindingForUsageMinutes(appName: "Beta").wrappedValue = "15"
+        model.generateRecommendationGuide()
+
+        return model
+    }
 }
 
 private struct StubLayoutExtractor: LayoutOCRExtracting {

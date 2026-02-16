@@ -77,7 +77,14 @@
   - Recommendation guide section added in app UI.
   - Displays score delta, current/recommended slot previews, and manual move sequence.
 
+### E7-T2 Guided apply checklist
+- Status: IN_PROGRESS
+- Notes:
+  - Checklist UI now supports per-step completion toggles.
+  - "Mark Next Complete" and reset-progress controls added.
+  - Progress persists per profile and restores after profile switching/app relaunch.
+
 ## Next immediate tasks
-1. Add E7-T2 guided apply checklist with progress tracking while users move icons.
-2. Add recommendation history persistence per profile (plan snapshots + rerun compare).
-3. Expand Screen Time parser with locale/time-format variations and correction UI.
+1. Add recommendation history persistence per profile (plan snapshots + rerun compare).
+2. Expand Screen Time parser with locale/time-format variations and correction UI.
+3. Add analytics event hooks for guided-apply start/progress/completion.

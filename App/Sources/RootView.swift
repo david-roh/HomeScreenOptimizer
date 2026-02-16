@@ -471,17 +471,54 @@ struct RootView: View {
                 }
 
                 if !model.moveSteps.isEmpty {
-                    Text("Manual move sequence")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    HStack {
+                        Text("Guided apply checklist")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(model.moveProgressText)
+                            .font(.footnote)
+                            .monospacedDigit()
+                            .foregroundStyle(model.allMovesCompleted ? .green : .secondary)
+                    }
 
-                    ForEach(Array(model.moveSteps.prefix(12).enumerated()), id: \.offset) { index, step in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(index + 1). Move \(model.displayName(for: step.appID))")
-                                .font(.subheadline)
-                            Text("\(slotLabel(step.fromSlot)) → \(slotLabel(step.toSlot))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    HStack {
+                        Button("Mark Next Complete") {
+                            model.markNextMoveStepComplete()
+                        }
+                        .disabled(model.allMovesCompleted)
+
+                        Spacer()
+
+                        Button("Reset Progress") {
+                            model.resetMoveProgress()
+                        }
+                    }
+                    .buttonStyle(.borderless)
+
+                    ForEach(Array(model.moveSteps.prefix(20).enumerated()), id: \.offset) { index, step in
+                        HStack(alignment: .top, spacing: 8) {
+                            Button {
+                                model.toggleMoveStepCompletion(step.id)
+                            } label: {
+                                Image(systemName: model.completedMoveStepIDs.contains(step.id) ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(model.completedMoveStepIDs.contains(step.id) ? .green : .secondary)
+                            }
+                            .buttonStyle(.plain)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(index + 1). Move \(model.displayName(for: step.appID))")
+                                    .font(.subheadline)
+                                    .foregroundStyle(model.completedMoveStepIDs.contains(step.id) ? .secondary : .primary)
+                                Text("\(slotLabel(step.fromSlot)) → \(slotLabel(step.toSlot))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if model.nextPendingMoveStepID == step.id {
+                                    Text("Next recommended step")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                }
+                            }
                         }
                     }
                 }
@@ -546,10 +583,13 @@ final class RootViewModel: ObservableObject {
     @Published var manualUsageEnabled = false
     @Published var usageDraftByNormalizedName: [String: String] = [:]
     @Published var importedUsageEntries: [ScreenTimeUsageEntry] = []
+    @Published var completedMoveStepIDs: Set<UUID> = []
+    @Published var activeRecommendationPlanID: UUID?
 
     private let profileBuilder = OnboardingProfileBuilder()
     private let profileRepository: FileProfileRepository
     private let usageRepository: FileUsageSnapshotRepository
+    private let guidedApplyDraftRepository: FileGuidedApplyDraftRepository
     private let importCoordinator: ScreenshotImportCoordinator
     private let ocrExtractor: any LayoutOCRExtracting
     private let ocrPostProcessor = OCRPostProcessor()
@@ -578,6 +618,7 @@ final class RootViewModel: ObservableObject {
 
         profileRepository = FileProfileRepository(fileURL: baseURL.appendingPathComponent("profiles.json"))
         usageRepository = FileUsageSnapshotRepository(fileURL: baseURL.appendingPathComponent("usage_snapshots.json"))
+        guidedApplyDraftRepository = FileGuidedApplyDraftRepository(fileURL: baseURL.appendingPathComponent("guided_apply_drafts.json"))
         let importRepository = FileScreenshotImportSessionRepository(fileURL: baseURL.appendingPathComponent("import_sessions.json"))
         importCoordinator = ScreenshotImportCoordinator(repository: importRepository)
 
@@ -622,6 +663,22 @@ final class RootViewModel: ObservableObject {
         }
 
         return ordered.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    var completedMoveCount: Int {
+        moveSteps.filter { completedMoveStepIDs.contains($0.id) }.count
+    }
+
+    var moveProgressText: String {
+        "\(completedMoveCount)/\(moveSteps.count)"
+    }
+
+    var allMovesCompleted: Bool {
+        !moveSteps.isEmpty && completedMoveCount == moveSteps.count
+    }
+
+    var nextPendingMoveStepID: UUID? {
+        moveSteps.first { !completedMoveStepIDs.contains($0.id) }?.id
     }
 
     func displayName(for appID: UUID) -> String {
@@ -680,6 +737,7 @@ final class RootViewModel: ObservableObject {
                 selectedProfileID = savedProfiles.first?.id
             }
             loadUsageSnapshotForSelectedProfile()
+            loadGuidedApplyDraftForSelectedProfile()
         } catch {
             showStatus("Failed to load profiles: \(error.localizedDescription)", level: .error)
         }
@@ -687,6 +745,7 @@ final class RootViewModel: ObservableObject {
 
     func handleProfileSelectionChange() {
         loadUsageSnapshotForSelectedProfile()
+        loadGuidedApplyDraftForSelectedProfile()
     }
 
     func saveProfile() {
@@ -914,6 +973,9 @@ final class RootViewModel: ObservableObject {
         moveSteps = planMoves
         simulationSummary = simulation
         appNamesByID = appNames
+        activeRecommendationPlanID = generated.recommendedPlan.id
+        completedMoveStepIDs = []
+        persistGuidedApplyDraft()
 
         showStatus("Generated guide with \(planMoves.count) moves.", level: .success)
     }
@@ -999,6 +1061,30 @@ final class RootViewModel: ObservableObject {
         detectedSlots = originalDetectedSlots
         hydrateUsageDraftFromDetectedApps()
         showStatus("Restored OCR-detected labels and slots.", level: .info)
+    }
+
+    func toggleMoveStepCompletion(_ stepID: UUID) {
+        if completedMoveStepIDs.contains(stepID) {
+            completedMoveStepIDs.remove(stepID)
+        } else {
+            completedMoveStepIDs.insert(stepID)
+        }
+
+        persistGuidedApplyDraft()
+    }
+
+    func markNextMoveStepComplete() {
+        guard let next = nextPendingMoveStepID else {
+            return
+        }
+
+        completedMoveStepIDs.insert(next)
+        persistGuidedApplyDraft()
+    }
+
+    func resetMoveProgress() {
+        completedMoveStepIDs = []
+        persistGuidedApplyDraft()
     }
 
     private func analyzeScreenshots(_ pages: [ScreenshotPage]) async {
@@ -1165,6 +1251,67 @@ final class RootViewModel: ObservableObject {
         }
     }
 
+    private func loadGuidedApplyDraftForSelectedProfile() {
+        guard let profileID = selectedProfileID else {
+            currentLayoutAssignments = []
+            recommendedLayoutAssignments = []
+            moveSteps = []
+            simulationSummary = nil
+            appNamesByID = [:]
+            completedMoveStepIDs = []
+            activeRecommendationPlanID = nil
+            return
+        }
+
+        do {
+            guard let draft = try guidedApplyDraftRepository.fetch(profileID: profileID) else {
+                currentLayoutAssignments = []
+                recommendedLayoutAssignments = []
+                moveSteps = []
+                simulationSummary = nil
+                appNamesByID = [:]
+                completedMoveStepIDs = []
+                activeRecommendationPlanID = nil
+                return
+            }
+
+            currentLayoutAssignments = draft.currentAssignments
+            recommendedLayoutAssignments = draft.recommendedAssignments
+            moveSteps = draft.moveSteps
+            appNamesByID = draft.appNamesByID
+            activeRecommendationPlanID = draft.planID
+            simulationSummary = nil
+            completedMoveStepIDs = draft.completedStepIDs
+        } catch {
+            showStatus("Failed to load guided apply draft: \(error.localizedDescription)", level: .error)
+        }
+    }
+
+    private func persistGuidedApplyDraft() {
+        guard let profileID = selectedProfileID else {
+            return
+        }
+        guard !moveSteps.isEmpty else {
+            return
+        }
+
+        do {
+            let draft = GuidedApplyDraft(
+                profileID: profileID,
+                planID: activeRecommendationPlanID ?? UUID(),
+                currentAssignments: currentLayoutAssignments,
+                recommendedAssignments: recommendedLayoutAssignments,
+                moveSteps: moveSteps,
+                appNamesByID: appNamesByID,
+                completedStepIDs: completedMoveStepIDs,
+                updatedAt: Date()
+            )
+            try guidedApplyDraftRepository.upsert(draft)
+        } catch {
+            showStatus("Failed to save guided apply draft: \(error.localizedDescription)", level: .error)
+        }
+    }
+
     private func resetRecommendationOutput() {
         currentLayoutAssignments = []
         recommendedLayoutAssignments = []
@@ -1172,6 +1319,8 @@ final class RootViewModel: ObservableObject {
         simulationSummary = nil
         appNamesByID = [:]
         originalDetectedSlots = []
+        completedMoveStepIDs = []
+        activeRecommendationPlanID = nil
     }
 
     private func writeImageToTemporaryFile(data: Data) throws -> URL {
