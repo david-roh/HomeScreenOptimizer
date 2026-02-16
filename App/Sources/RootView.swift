@@ -359,241 +359,241 @@ struct RootView: View {
 
     private var recommendationSection: some View {
         Section("Recommendation Guide") {
+            if let activeProfileName = model.activeProfileName {
+                Text("Active profile: \(activeProfileName)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Save/select a profile to generate a recommendation.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             if model.detectedSlots.isEmpty {
                 Text("Import and analyze screenshots to generate a layout plan.")
                     .foregroundStyle(.secondary)
-            } else {
-                if let activeProfileName = model.activeProfileName {
-                    Text("Active profile: \(activeProfileName)")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Save/select a profile to generate a recommendation.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Toggle("Use manual usage input", isOn: $model.manualUsageEnabled)
-
-                if model.manualUsageEnabled {
-                    Text("Enter minutes per day for each app to drive utility ranking.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+            }
 
 #if canImport(DeviceActivity) && canImport(FamilyControls)
-                    Text("Native Screen Time")
+            Text("Native Screen Time")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Button(model.nativeScreenTimeAuthorized ? "Refresh Screen Time Access" : "Connect Screen Time") {
+                    Task {
+                        await model.requestNativeScreenTimeAuthorization()
+                    }
+                }
+
+                Spacer()
+
+                Text(model.nativeScreenTimeAuthorizationLabel)
+                    .font(.caption)
+                    .foregroundStyle(model.nativeScreenTimeAuthorized ? .green : .secondary)
+            }
+
+            if model.nativeScreenTimeAuthorized {
+                DeviceActivityReport(
+                    DeviceActivityReport.Context("HSO Usage Summary"),
+                    filter: model.nativeUsageFilter
+                )
+                .frame(minHeight: 180)
+
+                Button("Import Native Screen Time Usage") {
+                    model.importNativeUsageSnapshot()
+                }
+
+                if let lastSnapshot = model.nativeScreenTimeLastSnapshotAt {
+                    Text("Last native snapshot: \(lastSnapshot.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+#endif
+
+            Toggle("Use manual usage input", isOn: $model.manualUsageEnabled)
+
+            if model.manualUsageEnabled {
+                Text("Enter minutes per day for each app to drive utility ranking.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                PhotosPicker(selection: $selectedUsageItem, matching: .images) {
+                    Label("Import Screen Time Screenshot", systemImage: "chart.bar.doc.horizontal")
+                }
+                .disabled(model.selectedProfileID == nil)
+
+                if !model.importedUsageEntries.isEmpty {
+                    Text("Latest imported usage")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
-                    HStack {
-                        Button(model.nativeScreenTimeAuthorized ? "Refresh Screen Time Access" : "Connect Screen Time") {
-                            Task {
-                                await model.requestNativeScreenTimeAuthorization()
-                            }
-                        }
-
-                        Spacer()
-
-                        Text(model.nativeScreenTimeAuthorizationLabel)
-                            .font(.caption)
-                            .foregroundStyle(model.nativeScreenTimeAuthorized ? .green : .secondary)
-                    }
-
-                    if model.nativeScreenTimeAuthorized {
-                        DeviceActivityReport(
-                            DeviceActivityReport.Context("HSO Usage Summary"),
-                            filter: model.nativeUsageFilter
-                        )
-                        .frame(minHeight: 180)
-
-                        Button("Import Native Screen Time Usage") {
-                            model.importNativeUsageSnapshot()
-                        }
-
-                        if let lastSnapshot = model.nativeScreenTimeLastSnapshotAt {
-                            Text("Last native snapshot: \(lastSnapshot.formatted(date: .abbreviated, time: .shortened))")
+                    ForEach(Array(model.importedUsageEntries.prefix(6).enumerated()), id: \.offset) { _, entry in
+                        HStack {
+                            Text(entry.appName)
+                                .lineLimit(1)
+                            Spacer()
+                            Text("\(Int(entry.minutesPerDay)) min")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
-#endif
+                }
 
-                    PhotosPicker(selection: $selectedUsageItem, matching: .images) {
-                        Label("Import Screen Time Screenshot", systemImage: "chart.bar.doc.horizontal")
+                ForEach(model.usageEditorAppNames, id: \.self) { appName in
+                    HStack {
+                        Text(appName)
+                            .lineLimit(1)
+                        Spacer()
+                        TextField(
+                            "min/day",
+                            text: model.bindingForUsageMinutes(appName: appName)
+                        )
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 110)
+                    }
+                }
+
+                HStack {
+                    Button("Load Saved Usage") {
+                        model.loadManualUsageSnapshot()
                     }
                     .disabled(model.selectedProfileID == nil)
 
-                    if !model.importedUsageEntries.isEmpty {
-                        Text("Latest imported usage")
-                            .font(.footnote)
+                    Spacer()
+
+                    Button("Save Usage") {
+                        model.saveManualUsageSnapshot()
+                    }
+                    .disabled(model.selectedProfileID == nil || model.usageEditorAppNames.isEmpty)
+                }
+            }
+
+            Button("Generate Rearrangement Guide") {
+                model.generateRecommendationGuide()
+            }
+            .disabled(model.selectedProfileID == nil || model.detectedSlots.isEmpty)
+
+            if let summary = model.simulationSummary {
+                Text("Score delta: \(String(format: "%+.3f", summary.aggregateScoreDelta))")
+                    .font(.subheadline)
+                Text("Estimated moves: \(summary.moveCount)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !model.recommendationHistory.isEmpty {
+                Text("Recommendation history")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                ForEach(Array(model.recommendationHistory.prefix(5).enumerated()), id: \.offset) { _, plan in
+                    HStack(alignment: .top) {
+                        Text(model.historyLabel(for: plan))
+                            .font(.caption)
                             .foregroundStyle(.secondary)
-
-                        ForEach(Array(model.importedUsageEntries.prefix(6).enumerated()), id: \.offset) { _, entry in
-                            HStack {
-                                Text(entry.appName)
-                                    .lineLimit(1)
-                                Spacer()
-                                Text("\(Int(entry.minutesPerDay)) min")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    ForEach(model.usageEditorAppNames, id: \.self) { appName in
-                        HStack {
-                            Text(appName)
-                                .lineLimit(1)
-                            Spacer()
-                            TextField(
-                                "min/day",
-                                text: model.bindingForUsageMinutes(appName: appName)
-                            )
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 110)
-                        }
-                    }
-
-                    HStack {
-                        Button("Load Saved Usage") {
-                            model.loadManualUsageSnapshot()
-                        }
-                        .disabled(model.selectedProfileID == nil)
-
                         Spacer()
-
-                        Button("Save Usage") {
-                            model.saveManualUsageSnapshot()
+                        if plan.id == model.activeRecommendationPlanID {
+                            Text("Current")
+                                .font(.caption2)
+                                .foregroundStyle(.green)
+                        } else {
+                            Button("Compare") {
+                                model.compareAgainstHistory(planID: plan.id)
+                            }
+                            .buttonStyle(.borderless)
                         }
-                        .disabled(model.selectedProfileID == nil || model.usageEditorAppNames.isEmpty)
                     }
                 }
+            }
 
-                Button("Generate Rearrangement Guide") {
-                    model.generateRecommendationGuide()
+            if !model.historyComparisonMessage.isEmpty {
+                Text(model.historyComparisonMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !model.currentLayoutAssignments.isEmpty {
+                Text("Current layout")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                ForEach(Array(model.currentLayoutAssignments.prefix(8).enumerated()), id: \.offset) { _, assignment in
+                    HStack {
+                        Text(model.displayName(for: assignment.appID))
+                        Spacer()
+                        Text(slotLabel(assignment.slot))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                .disabled(model.selectedProfileID == nil || model.detectedSlots.isEmpty)
+            }
 
-                if let summary = model.simulationSummary {
-                    Text("Score delta: \(String(format: "%+.3f", summary.aggregateScoreDelta))")
-                        .font(.subheadline)
-                    Text("Estimated moves: \(summary.moveCount)")
+            if !model.recommendedLayoutAssignments.isEmpty {
+                Text("Recommended layout")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                ForEach(Array(model.recommendedLayoutAssignments.prefix(8).enumerated()), id: \.offset) { _, assignment in
+                    HStack {
+                        Text(model.displayName(for: assignment.appID))
+                        Spacer()
+                        Text(slotLabel(assignment.slot))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if !model.moveSteps.isEmpty {
+                HStack {
+                    Text("Guided apply checklist")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(model.moveProgressText)
+                        .font(.footnote)
+                        .monospacedDigit()
+                        .foregroundStyle(model.allMovesCompleted ? .green : .secondary)
                 }
 
-                if !model.recommendationHistory.isEmpty {
-                    Text("Recommendation history")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                HStack {
+                    Button("Mark Next Complete") {
+                        model.markNextMoveStepComplete()
+                    }
+                    .disabled(model.allMovesCompleted)
 
-                    ForEach(Array(model.recommendationHistory.prefix(5).enumerated()), id: \.offset) { _, plan in
-                        HStack(alignment: .top) {
-                            Text(model.historyLabel(for: plan))
+                    Spacer()
+
+                    Button("Reset Progress") {
+                        model.resetMoveProgress()
+                    }
+                }
+                .buttonStyle(.borderless)
+
+                ForEach(Array(model.moveSteps.prefix(20).enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .top, spacing: 8) {
+                        Button {
+                            model.toggleMoveStepCompletion(step.id)
+                        } label: {
+                            Image(systemName: model.completedMoveStepIDs.contains(step.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(model.completedMoveStepIDs.contains(step.id) ? .green : .secondary)
+                        }
+                        .buttonStyle(.plain)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(index + 1). Move \(model.displayName(for: step.appID))")
+                                .font(.subheadline)
+                                .foregroundStyle(model.completedMoveStepIDs.contains(step.id) ? .secondary : .primary)
+                            Text("\(slotLabel(step.fromSlot)) → \(slotLabel(step.toSlot))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Spacer()
-                            if plan.id == model.activeRecommendationPlanID {
-                                Text("Current")
+                            if model.nextPendingMoveStepID == step.id {
+                                Text("Next recommended step")
                                     .font(.caption2)
-                                    .foregroundStyle(.green)
-                            } else {
-                                Button("Compare") {
-                                    model.compareAgainstHistory(planID: plan.id)
-                                }
-                                .buttonStyle(.borderless)
-                            }
-                        }
-                    }
-                }
-
-                if !model.historyComparisonMessage.isEmpty {
-                    Text(model.historyComparisonMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                if !model.currentLayoutAssignments.isEmpty {
-                    Text("Current layout")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    ForEach(Array(model.currentLayoutAssignments.prefix(8).enumerated()), id: \.offset) { _, assignment in
-                        HStack {
-                            Text(model.displayName(for: assignment.appID))
-                            Spacer()
-                            Text(slotLabel(assignment.slot))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                if !model.recommendedLayoutAssignments.isEmpty {
-                    Text("Recommended layout")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    ForEach(Array(model.recommendedLayoutAssignments.prefix(8).enumerated()), id: \.offset) { _, assignment in
-                        HStack {
-                            Text(model.displayName(for: assignment.appID))
-                            Spacer()
-                            Text(slotLabel(assignment.slot))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                if !model.moveSteps.isEmpty {
-                    HStack {
-                        Text("Guided apply checklist")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text(model.moveProgressText)
-                            .font(.footnote)
-                            .monospacedDigit()
-                            .foregroundStyle(model.allMovesCompleted ? .green : .secondary)
-                    }
-
-                    HStack {
-                        Button("Mark Next Complete") {
-                            model.markNextMoveStepComplete()
-                        }
-                        .disabled(model.allMovesCompleted)
-
-                        Spacer()
-
-                        Button("Reset Progress") {
-                            model.resetMoveProgress()
-                        }
-                    }
-                    .buttonStyle(.borderless)
-
-                    ForEach(Array(model.moveSteps.prefix(20).enumerated()), id: \.offset) { index, step in
-                        HStack(alignment: .top, spacing: 8) {
-                            Button {
-                                model.toggleMoveStepCompletion(step.id)
-                            } label: {
-                                Image(systemName: model.completedMoveStepIDs.contains(step.id) ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(model.completedMoveStepIDs.contains(step.id) ? .green : .secondary)
-                            }
-                            .buttonStyle(.plain)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("\(index + 1). Move \(model.displayName(for: step.appID))")
-                                    .font(.subheadline)
-                                    .foregroundStyle(model.completedMoveStepIDs.contains(step.id) ? .secondary : .primary)
-                                Text("\(slotLabel(step.fromSlot)) → \(slotLabel(step.toSlot))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                if model.nextPendingMoveStepID == step.id {
-                                    Text("Next recommended step")
-                                        .font(.caption2)
-                                        .foregroundStyle(.orange)
-                                }
+                                    .foregroundStyle(.orange)
                             }
                         }
                     }
