@@ -220,18 +220,6 @@ struct RootView: View {
             }
             .navigationTitle("HomeScreenOptimizer")
             .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        advanceFromCurrentStage()
-                    } label: {
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(selectedTab.accent)
-                    }
-                    .accessibilityLabel("Next step")
-                }
-            }
             .fontDesign(.rounded)
             .animation(.easeInOut(duration: 0.22), value: selectedTab)
         }
@@ -322,13 +310,16 @@ struct RootView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
 
                 Color.clear
-                    .frame(height: 8)
+                    .frame(height: 92)
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 20)
         }
         .scrollIndicators(.hidden)
+        .safeAreaInset(edge: .bottom) {
+            reachableActionRail(for: tab)
+        }
     }
 
     private func stageHeader(for tab: Tab) -> some View {
@@ -355,16 +346,6 @@ struct RootView: View {
 
             ProgressView(value: stageCompletion(for: tab))
                 .tint(.white)
-
-            Button {
-                advanceFrom(stage: tab)
-            } label: {
-                Label(primaryActionLabel(for: tab), systemImage: "arrow.right")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.white)
-            .foregroundStyle(tab.accent)
 
             if let blocker = stageShortHint(for: tab) {
                 Text(blocker)
@@ -398,6 +379,40 @@ struct RootView: View {
                 .stroke(.white.opacity(0.22), lineWidth: 1)
         )
         .shadow(color: tab.accent.opacity(0.25), radius: 12, x: 0, y: 7)
+    }
+
+    private func reachableActionRail(for tab: Tab) -> some View {
+        VStack(spacing: 8) {
+            if let hint = stageShortHint(for: tab), isPrimaryActionDisabled(for: tab) {
+                Text(hint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Button {
+                advanceFrom(stage: tab)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: tab.icon)
+                    Text(primaryActionLabel(for: tab))
+                        .fontWeight(.semibold)
+                    Spacer()
+                    Image(systemName: "arrow.right")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(tab.accent)
+            .disabled(isPrimaryActionDisabled(for: tab))
+            .accessibilityIdentifier("bottom-primary-action")
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .background(.ultraThinMaterial)
     }
 
     private var statusBanner: some View {
@@ -1127,10 +1142,6 @@ struct RootView: View {
         }
     }
 
-    private func advanceFromCurrentStage() {
-        advanceFrom(stage: selectedTab)
-    }
-
     private func advanceFrom(stage: Tab) {
         switch stage {
         case .setup:
@@ -1222,6 +1233,24 @@ struct RootView: View {
             return canOpenApply ? "Continue" : "Generate"
         case .apply:
             return model.allMovesCompleted ? "Done" : "Mark next"
+        }
+    }
+
+    private func isPrimaryActionDisabled(for tab: Tab) -> Bool {
+        switch tab {
+        case .setup:
+            return !(canOpenImport || model.canSubmitProfile)
+        case .importData:
+            guard canOpenImport else { return true }
+            if model.importSession == nil { return false }
+            if canOpenPlan { return false }
+            return model.importSession?.pages.isEmpty ?? true
+        case .plan:
+            guard canOpenPlan else { return true }
+            if canOpenApply { return false }
+            return !canGeneratePlan
+        case .apply:
+            return !canOpenApply || model.allMovesCompleted
         }
     }
 
