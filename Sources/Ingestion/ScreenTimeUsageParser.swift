@@ -156,12 +156,13 @@ public struct ScreenTimeUsageParser: Sendable {
             let appName = tokens[..<start]
                 .joined(separator: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalizedAppName = normalizeAppName(appName)
 
-            guard isLikelyAppName(appName) else {
+            guard isLikelyAppName(normalizedAppName) else {
                 continue
             }
 
-            return ScreenTimeUsageEntry(appName: appName, minutesPerDay: minutes, confidence: confidence)
+            return ScreenTimeUsageEntry(appName: normalizedAppName, minutesPerDay: minutes, confidence: confidence)
         }
 
         return nil
@@ -170,6 +171,8 @@ public struct ScreenTimeUsageParser: Sendable {
     private func parseMinutes(from rawText: String) -> Double? {
         let text = rawText
             .lowercased()
+            .replacingOccurrences(of: "’", with: "'")
+            .replacingOccurrences(of: "·", with: ":")
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -178,7 +181,7 @@ public struct ScreenTimeUsageParser: Sendable {
         }
 
         if let match = firstMatch(
-            pattern: #"(?:(\d{1,2})\s*h(?:our|ours|r|rs)?)?\s*(?:(\d{1,2})\s*m(?:in|ins|inute|inutes)?)$"#,
+            pattern: #"(?:(\d{1,2})\s*(?:h|hr|hrs|hour|hours|heure|heures|hora|horas|std))?\s*(?:(\d{1,2})\s*(?:m|min|mins|minute|minutes|minuto|minutos|mn))$"#,
             in: text
         ) {
             let hours = match[1].flatMap(Int.init) ?? 0
@@ -194,17 +197,39 @@ public struct ScreenTimeUsageParser: Sendable {
             return total > 0 ? Double(total) : nil
         }
 
-        if let match = firstMatch(pattern: #"^(\d{1,4})\s*m$"#, in: text),
+        if let match = firstMatch(pattern: #"^(\d{1,2})\.(\d{2})$"#, in: text),
+           let hours = match[1].flatMap(Int.init),
+           let minutes = match[2].flatMap(Int.init) {
+            let total = (hours * 60) + minutes
+            return total > 0 ? Double(total) : nil
+        }
+
+        if let match = firstMatch(pattern: #"^(\d{1,2}(?:[.,]\d{1,2})?)\s*(?:h|hr|hrs|hour|hours|heure|heures|hora|horas|std)$"#, in: text),
+           let hoursValue = parseDecimal(match[1]) {
+            let total = Int((hoursValue * 60).rounded())
+            return total > 0 ? Double(total) : nil
+        }
+
+        if let match = firstMatch(pattern: #"^(\d{1,4})\s*(?:m|min|mins|minute|minutes|minuto|minutos|mn)$"#, in: text),
            let minutes = match[1].flatMap(Int.init) {
             return minutes > 0 ? Double(minutes) : nil
         }
 
-        if let match = firstMatch(pattern: #"^(\d{1,3})\s*h$"#, in: text),
+        if let match = firstMatch(pattern: #"^(\d{1,3})\s*(?:h|hr|hrs|hour|hours|heure|heures|hora|horas|std)$"#, in: text),
            let hours = match[1].flatMap(Int.init) {
             return hours > 0 ? Double(hours * 60) : nil
         }
 
         return nil
+    }
+
+    private func parseDecimal(_ raw: String?) -> Double? {
+        guard let raw else {
+            return nil
+        }
+
+        let normalized = raw.replacingOccurrences(of: ",", with: ".")
+        return Double(normalized)
     }
 
     private func firstMatch(pattern: String, in text: String) -> [String?]? {
@@ -237,6 +262,13 @@ public struct ScreenTimeUsageParser: Sendable {
     private func canonicalAppName(_ text: String) -> String {
         text
             .lowercased()
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func normalizeAppName(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: #"^[\p{P}\p{S}\s]+|[\p{P}\p{S}\s]+$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -287,6 +319,9 @@ public struct ScreenTimeUsageParser: Sendable {
         "pickups",
         "last 7 days",
         "today",
-        "week"
+        "week",
+        "today total",
+        "aujourd'hui",
+        "hoy"
     ]
 }

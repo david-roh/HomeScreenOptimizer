@@ -49,6 +49,7 @@
   - Usage snapshots persist per profile via file-backed repository.
   - Normalized manual usage now feeds planner utility scoring.
   - Screen Time screenshot OCR import now auto-fills usage minutes.
+  - Parser now handles locale-friendly duration variants (`1 h 20 min`, `2,5 h`, `1.30`).
 
 ### E4-T1 Onboarding profile setup
 - Status: DONE
@@ -92,6 +93,6 @@
   - Current run can be compared against previous runs for score and move-count delta.
 
 ## Next immediate tasks
-1. Expand Screen Time parser with locale/time-format variations and correction UI.
-2. Add analytics event hooks for guided-apply start/progress/completion.
-3. Add guide completion export/share summary for user follow-through.
+1. Add analytics event hooks for guided-apply start/progress/completion.
+2. Add guide completion export/share summary for user follow-through.
+3. Add stronger OCR correction aids for low-confidence usage rows.

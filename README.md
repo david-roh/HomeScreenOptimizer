@@ -11,6 +11,7 @@ This repository contains the MVP foundation for an iOS home-screen layout optimi
 - Onboarding profile builder, goal weighting, and reachability calibration mini-test.
 - Manual usage input (minutes/day) with per-profile persistence.
 - Screen Time screenshot OCR import to auto-fill manual usage inputs.
+- Screen Time duration parser now supports localized/variant time formats.
 - Reachability-aware layout planner with generated manual move guide.
 - Guided apply checklist with per-profile progress persistence.
 - Recommendation history persistence with rerun score/move comparison.

@@ -63,4 +63,34 @@ final class ScreenTimeUsageParserTests: XCTestCase {
         XCTAssertEqual(output.first?.appName, "YouTube")
         XCTAssertEqual(output.first?.minutesPerDay ?? 0, 70, accuracy: 0.001)
     }
+
+    func testParseSupportsLocalizedHourMinutePatterns() {
+        let parser = ScreenTimeUsageParser()
+        let input = [
+            OCRLabelCandidate(text: "TikTok 1 h 20 min", confidence: 0.91),
+            OCRLabelCandidate(text: "Reddit 2,5 h", confidence: 0.89),
+            OCRLabelCandidate(text: "Safari 1.30", confidence: 0.85)
+        ]
+
+        let output = parser.parse(from: input)
+        XCTAssertEqual(output.count, 3)
+        XCTAssertEqual(output.first?.appName, "Reddit")
+        XCTAssertEqual(output.first?.minutesPerDay ?? 0, 150, accuracy: 0.001)
+        XCTAssertEqual(output[1].appName, "Safari")
+        XCTAssertEqual(output[1].minutesPerDay, 90, accuracy: 0.001)
+        XCTAssertEqual(output.last?.appName, "TikTok")
+        XCTAssertEqual(output.last?.minutesPerDay ?? 0, 80, accuracy: 0.001)
+    }
+
+    func testParseNormalizesWrappedAppNamePunctuation() {
+        let parser = ScreenTimeUsageParser()
+        let input = [
+            OCRLabelCandidate(text: "• Instagram • 35m", confidence: 0.90)
+        ]
+
+        let output = parser.parse(from: input)
+        XCTAssertEqual(output.count, 1)
+        XCTAssertEqual(output.first?.appName, "Instagram")
+        XCTAssertEqual(output.first?.minutesPerDay ?? 0, 35, accuracy: 0.001)
+    }
 }
