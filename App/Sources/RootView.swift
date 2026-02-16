@@ -20,59 +20,168 @@ struct RootView: View {
     @StateObject private var model = RootViewModel()
     @State private var selectedItem: PhotosPickerItem?
     @State private var selectedUsageItem: PhotosPickerItem?
+    @State private var selectedTab: Tab = .setup
 
-    var body: some View {
-        NavigationStack {
-            Form {
-                if !model.statusMessage.isEmpty {
-                    Section {
-                        Label(model.statusMessage, systemImage: model.statusLevel.iconName)
-                            .font(.footnote)
-                            .foregroundStyle(model.statusLevel.tint)
-                    }
-                }
+    private enum Tab: String, CaseIterable {
+        case setup
+        case importData
+        case plan
+        case apply
 
-                onboardingSection
-                calibrationSection
-                profileListSection
-                importSection
-                recommendationSection
+        var title: String {
+            switch self {
+            case .setup:
+                return "Setup"
+            case .importData:
+                return "Import"
+            case .plan:
+                return "Plan"
+            case .apply:
+                return "Apply"
             }
-            .navigationTitle("HomeScreenOptimizer")
-            .onAppear {
-                model.loadProfiles()
-            }
-            .onChange(of: model.selectedProfileID) { _, _ in
-                model.handleProfileSelectionChange()
-            }
-            .onChange(of: selectedItem) { _, item in
-                guard let item else {
-                    return
-                }
+        }
 
-                Task {
-                    await model.handlePickedItem(item)
-                    selectedItem = nil
-                }
-            }
-            .onChange(of: selectedUsageItem) { _, item in
-                guard let item else {
-                    return
-                }
-
-                Task {
-                    await model.handlePickedUsageItem(item)
-                    selectedUsageItem = nil
-                }
+        var icon: String {
+            switch self {
+            case .setup:
+                return "slider.horizontal.3"
+            case .importData:
+                return "photo.stack"
+            case .plan:
+                return "chart.bar.doc.horizontal"
+            case .apply:
+                return "checklist"
             }
         }
     }
 
-    private var onboardingSection: some View {
-        Section("Onboarding") {
+    var body: some View {
+        NavigationStack {
+            TabView(selection: $selectedTab) {
+                setupTab
+                    .tag(Tab.setup)
+                    .tabItem {
+                        Label(Tab.setup.title, systemImage: Tab.setup.icon)
+                    }
+
+                importTab
+                    .tag(Tab.importData)
+                    .tabItem {
+                        Label(Tab.importData.title, systemImage: Tab.importData.icon)
+                    }
+
+                planningTab
+                    .tag(Tab.plan)
+                    .tabItem {
+                        Label(Tab.plan.title, systemImage: Tab.plan.icon)
+                    }
+
+                applyTab
+                    .tag(Tab.apply)
+                    .tabItem {
+                        Label(Tab.apply.title, systemImage: Tab.apply.icon)
+                    }
+            }
+            .navigationTitle("HomeScreenOptimizer")
+            .toolbarTitleDisplayMode(.inline)
+        }
+        .onAppear {
+            model.loadProfiles()
+        }
+        .onChange(of: model.selectedProfileID) { _, _ in
+            model.handleProfileSelectionChange()
+        }
+        .onChange(of: selectedItem) { _, item in
+            guard let item else {
+                return
+            }
+
+            Task {
+                await model.handlePickedItem(item)
+                selectedItem = nil
+            }
+        }
+        .onChange(of: selectedUsageItem) { _, item in
+            guard let item else {
+                return
+            }
+
+            Task {
+                await model.handlePickedUsageItem(item)
+                selectedUsageItem = nil
+            }
+        }
+    }
+
+    private var setupTab: some View {
+        screenScroll {
+            if !model.statusMessage.isEmpty {
+                statusBanner
+            }
+            onboardingCard
+            calibrationCard
+            profilesCard
+        }
+    }
+
+    private var importTab: some View {
+        screenScroll {
+            if !model.statusMessage.isEmpty {
+                statusBanner
+            }
+            importSessionCard
+            importedScreensCard
+        }
+    }
+
+    private var planningTab: some View {
+        screenScroll {
+            if !model.statusMessage.isEmpty {
+                statusBanner
+            }
+            usageAndGenerationCard
+
+            if !model.recommendationHistory.isEmpty || !model.historyComparisonMessage.isEmpty {
+                recommendationHistoryCard
+            }
+
+            if !model.currentLayoutAssignments.isEmpty || !model.recommendedLayoutAssignments.isEmpty {
+                layoutPreviewCard
+            }
+        }
+    }
+
+    private var applyTab: some View {
+        screenScroll {
+            if !model.statusMessage.isEmpty {
+                statusBanner
+            }
+            applyChecklistCard
+        }
+    }
+
+    private var statusBanner: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: model.statusLevel.iconName)
+                .foregroundStyle(model.statusLevel.tint)
+            Text(model.statusMessage)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+        )
+    }
+
+    private var onboardingCard: some View {
+        card(title: "Profile", subtitle: "Tune goals and ergonomics once, then reuse") {
             TextField("Profile name", text: $model.profileName)
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
+                .textFieldStyle(.roundedBorder)
 
             Picker("Context", selection: $model.context) {
                 ForEach(ProfileContext.allCases, id: \.self) { context in
@@ -92,7 +201,7 @@ struct RootView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(spacing: 10) {
                 weightSlider(title: "Utility", value: $model.utilityWeight)
                 weightSlider(title: "Flow", value: $model.flowWeight)
                 weightSlider(title: "Aesthetics", value: $model.aestheticsWeight)
@@ -102,53 +211,15 @@ struct RootView: View {
             Button("Save Profile") {
                 model.saveProfile()
             }
+            .buttonStyle(.borderedProminent)
             .disabled(!model.canSubmitProfile)
         }
     }
 
-    private var profileListSection: some View {
-        Section("Saved Profiles") {
-            if model.savedProfiles.isEmpty {
-                Text("No saved profiles yet")
-                    .foregroundStyle(.secondary)
-            } else {
-                Picker("Active profile", selection: $model.selectedProfileID) {
-                    ForEach(model.savedProfiles) { profile in
-                        Text(profile.name).tag(Optional(profile.id))
-                    }
-                }
-
-                ForEach(model.savedProfiles) { profile in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(profile.name)
-                                .font(.headline)
-                            if model.selectedProfileID == profile.id {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                            }
-                        }
-                        Text("\(profile.context.displayTitle) • \(profile.handedness.displayTitle) • \(profile.gripMode.displayTitle)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            Button("Refresh Profiles") {
-                model.loadProfiles()
-            }
-        }
-    }
-
-    private var calibrationSection: some View {
-        Section("Reachability Calibration") {
-            Text("Tap the highlighted target as quickly as possible. This personalizes thumb-reach weighting.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
+    private var calibrationCard: some View {
+        card(title: "Reachability Calibration", subtitle: "Personalize thumb reach weighting") {
             if let target = model.calibrationCurrentTarget {
-                Text("Target \(model.calibrationProgressLabel): R\(target.row + 1) C\(target.column + 1)")
+                Text("Current target: R\(target.row + 1) C\(target.column + 1) (\(model.calibrationProgressLabel))")
                     .font(.subheadline)
             } else {
                 Text("No active calibration session")
@@ -156,7 +227,7 @@ struct RootView: View {
                     .foregroundStyle(.secondary)
             }
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
                 ForEach(calibrationCoordinates, id: \.id) { coordinate in
                     Button {
                         model.handleCalibrationTap(row: coordinate.row, column: coordinate.column)
@@ -174,6 +245,7 @@ struct RootView: View {
             Button(model.calibrationInProgress ? "Restart Calibration" : "Start Calibration") {
                 model.startCalibration()
             }
+            .buttonStyle(.bordered)
 
             if !model.lastCalibrationMap.slotWeights.isEmpty {
                 Text("Calibration saved with \(model.lastCalibrationMap.slotWeights.count) sampled targets.")
@@ -183,58 +255,92 @@ struct RootView: View {
         }
     }
 
-    private var importSection: some View {
-        Section("Screenshot Import") {
-            if let session = model.importSession {
-                Text("Session: \(session.id.uuidString.prefix(8))")
-                    .font(.footnote)
+    private var profilesCard: some View {
+        card(title: "Saved Profiles") {
+            if model.savedProfiles.isEmpty {
+                Text("No saved profiles yet")
                     .foregroundStyle(.secondary)
-
-                Text("Pages: \(session.pages.count)")
-                    .font(.subheadline)
-
-                PhotosPicker(selection: $selectedItem, matching: .images) {
-                    Label("Add Screenshot", systemImage: "photo")
-                }
-
-                Button("Analyze Latest Screenshot (OCR)") {
-                    Task {
-                        await model.analyzeLatestScreenshot()
+            } else {
+                Picker("Active profile", selection: $model.selectedProfileID) {
+                    ForEach(model.savedProfiles) { profile in
+                        Text(profile.name).tag(Optional(profile.id))
                     }
                 }
-                .disabled(session.pages.isEmpty)
 
-                Button("Analyze All Screenshots (OCR)") {
-                    Task {
-                        await model.analyzeAllScreenshots()
-                    }
-                }
-                .disabled(session.pages.isEmpty)
-
-                if !model.ocrCandidates.isEmpty {
-                    Text("OCR quality: \(model.ocrQuality.displayTitle)")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    ForEach(Array(model.ocrCandidates.prefix(8).enumerated()), id: \.offset) { _, candidate in
-                        HStack {
-                            Text(candidate.text)
-                            Spacer()
-                            Text(String(format: "%.2f", candidate.confidence))
-                                .font(.caption2)
+                ForEach(model.savedProfiles) { profile in
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(profile.name)
+                                .font(.headline)
+                            Text("\(profile.context.displayTitle) • \(profile.handedness.displayTitle) • \(profile.gripMode.displayTitle)")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .monospacedDigit()
+                        }
+                        Spacer()
+                        if model.selectedProfileID == profile.id {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
                         }
                     }
                 }
+            }
 
-                if !model.detectedSlots.isEmpty {
-                    Text("Detected layout slots (editable)")
+            Button("Refresh Profiles") {
+                model.loadProfiles()
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private var importSessionCard: some View {
+        card(title: "Screenshot Session", subtitle: "Import home-screen screenshots in page order") {
+            if let session = model.importSession {
+                HStack {
+                    Label("Session \(session.id.uuidString.prefix(8))", systemImage: "rectangle.stack")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(session.pages.count) pages")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                PhotosPicker(selection: $selectedItem, matching: .images) {
+                    Label("Add Screenshot", systemImage: "photo")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+
+                HStack {
+                    Button("Analyze Latest") {
+                        Task {
+                            await model.analyzeLatestScreenshot()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(session.pages.isEmpty)
+
+                    Button("Analyze All") {
+                        Task {
+                            await model.analyzeAllScreenshots()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(session.pages.isEmpty)
+                }
+
+                if !model.detectedSlots.isEmpty {
+                    HStack {
+                        Text("Detected slots")
+                            .font(.subheadline)
+                        Spacer()
+                        Text("OCR \(model.ocrQuality.displayTitle)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
 
                     if model.hasSlotConflicts {
-                        Label("Some apps share the same slot. Adjust before generating.", systemImage: "exclamationmark.triangle.fill")
+                        Label("Some apps share the same slot. Resolve before generating.", systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
@@ -242,86 +348,66 @@ struct RootView: View {
                     Button("Reset OCR Corrections") {
                         model.resetDetectedSlotCorrections()
                     }
-                    .font(.footnote)
+                    .buttonStyle(.borderless)
 
-                    ForEach(Array(model.detectedSlots.prefix(12).indices), id: \.self) { index in
+                    ForEach(Array(model.detectedSlots.prefix(10).indices), id: \.self) { index in
                         VStack(alignment: .leading, spacing: 8) {
-                            TextField(
-                                "App name",
-                                text: model.bindingForDetectedAppName(index: index)
-                            )
-                            .textInputAutocapitalization(.words)
-                            .autocorrectionDisabled()
+                            TextField("App name", text: model.bindingForDetectedAppName(index: index))
+                                .textInputAutocapitalization(.words)
+                                .autocorrectionDisabled()
+                                .textFieldStyle(.roundedBorder)
 
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Page \(model.detectedSlots[index].slot.page + 1)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    HStack(spacing: 8) {
-                                        Button {
-                                            model.adjustDetectedSlot(index: index, pageDelta: -1)
-                                        } label: {
-                                            Image(systemName: "minus.circle")
-                                        }
-                                        Button {
-                                            model.adjustDetectedSlot(index: index, pageDelta: 1)
-                                        } label: {
-                                            Image(systemName: "plus.circle")
-                                        }
-                                    }
+                            HStack(spacing: 16) {
+                                slotStepper(label: "Page \(model.detectedSlots[index].slot.page + 1)") {
+                                    model.adjustDetectedSlot(index: index, pageDelta: -1)
+                                } increment: {
+                                    model.adjustDetectedSlot(index: index, pageDelta: 1)
                                 }
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Row \(model.detectedSlots[index].slot.row + 1)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    HStack(spacing: 8) {
-                                        Button {
-                                            model.adjustDetectedSlot(index: index, rowDelta: -1)
-                                        } label: {
-                                            Image(systemName: "minus.circle")
-                                        }
-                                        Button {
-                                            model.adjustDetectedSlot(index: index, rowDelta: 1)
-                                        } label: {
-                                            Image(systemName: "plus.circle")
-                                        }
-                                    }
+                                slotStepper(label: "Row \(model.detectedSlots[index].slot.row + 1)") {
+                                    model.adjustDetectedSlot(index: index, rowDelta: -1)
+                                } increment: {
+                                    model.adjustDetectedSlot(index: index, rowDelta: 1)
                                 }
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Col \(model.detectedSlots[index].slot.column + 1)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    HStack(spacing: 8) {
-                                        Button {
-                                            model.adjustDetectedSlot(index: index, columnDelta: -1)
-                                        } label: {
-                                            Image(systemName: "minus.circle")
-                                        }
-                                        Button {
-                                            model.adjustDetectedSlot(index: index, columnDelta: 1)
-                                        } label: {
-                                            Image(systemName: "plus.circle")
-                                        }
-                                    }
+                                slotStepper(label: "Col \(model.detectedSlots[index].slot.column + 1)") {
+                                    model.adjustDetectedSlot(index: index, columnDelta: -1)
+                                } increment: {
+                                    model.adjustDetectedSlot(index: index, columnDelta: 1)
                                 }
                             }
-                            .buttonStyle(.borderless)
                         }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color(.tertiarySystemFill))
+                        )
                     }
                 }
+            } else {
+                Text("No active import session")
+                    .foregroundStyle(.secondary)
+            }
 
+            Button(model.importSession == nil ? "Start Import Session" : "Reset Session") {
+                model.startOrResetSession()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private var importedScreensCard: some View {
+        card(title: "Imported Pages") {
+            if let session = model.importSession, !session.pages.isEmpty {
                 ForEach(session.pages) { page in
-                    HStack {
+                    HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Page \(page.pageIndex + 1)")
+                                .font(.subheadline)
                             Text(page.filePath)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
+
                         Spacer()
 
                         Button {
@@ -340,68 +426,57 @@ struct RootView: View {
                         .buttonStyle(.borderless)
                         .disabled(!model.canMovePageDown(pageID: page.id))
 
-                        Button("Delete", role: .destructive) {
+                        Button(role: .destructive) {
                             model.removePage(pageID: page.id)
+                        } label: {
+                            Image(systemName: "trash")
                         }
                         .buttonStyle(.borderless)
                     }
                 }
             } else {
-                Text("No active import session")
+                Text("Add screenshots to begin OCR and slot detection.")
                     .foregroundStyle(.secondary)
-            }
-
-            Button(model.importSession == nil ? "Start Import Session" : "Reset Session") {
-                model.startOrResetSession()
             }
         }
     }
 
-    private var recommendationSection: some View {
-        Section("Recommendation Guide") {
+    private var usageAndGenerationCard: some View {
+        card(title: "Usage + Recommendation", subtitle: "Bring in usage signals and generate a move plan") {
             if let activeProfileName = model.activeProfileName {
                 Text("Active profile: \(activeProfileName)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
-                Text("Save/select a profile to generate a recommendation.")
+                Text("Save/select a profile first.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
-            if model.detectedSlots.isEmpty {
-                Text("Import and analyze screenshots to generate a layout plan.")
-                    .foregroundStyle(.secondary)
-            }
-
 #if canImport(DeviceActivity) && canImport(FamilyControls)
-            Text("Native Screen Time")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
-            HStack {
-                Button(model.nativeScreenTimeAuthorized ? "Refresh Screen Time Access" : "Connect Screen Time") {
-                    Task {
-                        await model.requestNativeScreenTimeAuthorization()
-                    }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Native Screen Time")
+                        .font(.subheadline)
+                    Spacer()
+                    Text(model.nativeScreenTimeAuthorizationLabel)
+                        .font(.caption)
+                        .foregroundStyle(model.nativeScreenTimeAuthorized ? .green : .secondary)
                 }
 
-                Spacer()
+                HStack {
+                    Button(model.nativeScreenTimeAuthorized ? "Refresh Access" : "Connect Screen Time") {
+                        Task {
+                            await model.requestNativeScreenTimeAuthorization()
+                        }
+                    }
+                    .buttonStyle(.bordered)
 
-                Text(model.nativeScreenTimeAuthorizationLabel)
-                    .font(.caption)
-                    .foregroundStyle(model.nativeScreenTimeAuthorized ? .green : .secondary)
-            }
-
-            if model.nativeScreenTimeAuthorized {
-                DeviceActivityReport(
-                    DeviceActivityReport.Context("HSO Usage Summary"),
-                    filter: model.nativeUsageFilter
-                )
-                .frame(minHeight: 180)
-
-                Button("Import Native Screen Time Usage") {
-                    model.importNativeUsageSnapshot()
+                    Button("Import Native Usage") {
+                        model.importNativeUsageSnapshot()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.nativeScreenTimeAuthorized)
                 }
 
                 if let lastSnapshot = model.nativeScreenTimeLastSnapshotAt {
@@ -409,26 +484,29 @@ struct RootView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                if model.nativeScreenTimeAuthorized {
+                    DeviceActivityReport(
+                        DeviceActivityReport.Context("HSO Usage Summary"),
+                        filter: model.nativeUsageFilter
+                    )
+                    .frame(minHeight: 150)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
             }
 #endif
 
             Toggle("Use manual usage input", isOn: $model.manualUsageEnabled)
 
             if model.manualUsageEnabled {
-                Text("Enter minutes per day for each app to drive utility ranking.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
                 PhotosPicker(selection: $selectedUsageItem, matching: .images) {
                     Label("Import Screen Time Screenshot", systemImage: "chart.bar.doc.horizontal")
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.bordered)
                 .disabled(model.selectedProfileID == nil)
 
                 if !model.importedUsageEntries.isEmpty {
-                    Text("Latest imported usage")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
                     ForEach(Array(model.importedUsageEntries.prefix(6).enumerated()), id: \.offset) { _, entry in
                         HStack {
                             Text(entry.appName)
@@ -446,13 +524,10 @@ struct RootView: View {
                         Text(appName)
                             .lineLimit(1)
                         Spacer()
-                        TextField(
-                            "min/day",
-                            text: model.bindingForUsageMinutes(appName: appName)
-                        )
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 110)
+                        TextField("min/day", text: model.bindingForUsageMinutes(appName: appName))
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 100)
                     }
                 }
 
@@ -460,6 +535,7 @@ struct RootView: View {
                     Button("Load Saved Usage") {
                         model.loadManualUsageSnapshot()
                     }
+                    .buttonStyle(.bordered)
                     .disabled(model.selectedProfileID == nil)
 
                     Spacer()
@@ -467,44 +543,51 @@ struct RootView: View {
                     Button("Save Usage") {
                         model.saveManualUsageSnapshot()
                     }
+                    .buttonStyle(.bordered)
                     .disabled(model.selectedProfileID == nil || model.usageEditorAppNames.isEmpty)
                 }
+            }
+
+            if model.detectedSlots.isEmpty {
+                Text("Analyze home-screen screenshots in Import tab first.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             Button("Generate Rearrangement Guide") {
                 model.generateRecommendationGuide()
             }
+            .buttonStyle(.borderedProminent)
             .disabled(model.selectedProfileID == nil || model.detectedSlots.isEmpty)
 
             if let summary = model.simulationSummary {
-                Text("Score delta: \(String(format: "%+.3f", summary.aggregateScoreDelta))")
-                    .font(.subheadline)
-                Text("Estimated moves: \(summary.moveCount)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                HStack {
+                    Label("Score \(String(format: "%+.3f", summary.aggregateScoreDelta))", systemImage: "chart.line.uptrend.xyaxis")
+                    Spacer()
+                    Label("\(summary.moveCount) moves", systemImage: "arrow.left.arrow.right")
+                }
+                .font(.subheadline)
             }
+        }
+    }
 
-            if !model.recommendationHistory.isEmpty {
-                Text("Recommendation history")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                ForEach(Array(model.recommendationHistory.prefix(5).enumerated()), id: \.offset) { _, plan in
-                    HStack(alignment: .top) {
-                        Text(model.historyLabel(for: plan))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        if plan.id == model.activeRecommendationPlanID {
-                            Text("Current")
-                                .font(.caption2)
-                                .foregroundStyle(.green)
-                        } else {
-                            Button("Compare") {
-                                model.compareAgainstHistory(planID: plan.id)
-                            }
-                            .buttonStyle(.borderless)
+    private var recommendationHistoryCard: some View {
+        card(title: "Recommendation History") {
+            ForEach(Array(model.recommendationHistory.prefix(8).enumerated()), id: \.offset) { _, plan in
+                HStack(alignment: .top) {
+                    Text(model.historyLabel(for: plan))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if plan.id == model.activeRecommendationPlanID {
+                        Text("Current")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("Compare") {
+                            model.compareAgainstHistory(planID: plan.id)
                         }
+                        .buttonStyle(.borderless)
                     }
                 }
             }
@@ -514,12 +597,15 @@ struct RootView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
 
+    private var layoutPreviewCard: some View {
+        card(title: "Layout Preview") {
             if !model.currentLayoutAssignments.isEmpty {
-                Text("Current layout")
-                    .font(.footnote)
+                Text("Current")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
-
                 ForEach(Array(model.currentLayoutAssignments.prefix(8).enumerated()), id: \.offset) { _, assignment in
                     HStack {
                         Text(model.displayName(for: assignment.appID))
@@ -532,10 +618,10 @@ struct RootView: View {
             }
 
             if !model.recommendedLayoutAssignments.isEmpty {
-                Text("Recommended layout")
-                    .font(.footnote)
+                Divider()
+                Text("Recommended")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
-
                 ForEach(Array(model.recommendedLayoutAssignments.prefix(8).enumerated()), id: \.offset) { _, assignment in
                     HStack {
                         Text(model.displayName(for: assignment.appID))
@@ -546,15 +632,21 @@ struct RootView: View {
                     }
                 }
             }
+        }
+    }
 
-            if !model.moveSteps.isEmpty {
+    private var applyChecklistCard: some View {
+        card(title: "Guided Apply", subtitle: "Execute recommended moves with progress tracking") {
+            if model.moveSteps.isEmpty {
+                Text("Generate a recommendation in Plan tab to create checklist steps.")
+                    .foregroundStyle(.secondary)
+            } else {
                 HStack {
-                    Text("Guided apply checklist")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    Text("Progress")
+                        .font(.subheadline)
                     Spacer()
                     Text(model.moveProgressText)
-                        .font(.footnote)
+                        .font(.subheadline)
                         .monospacedDigit()
                         .foregroundStyle(model.allMovesCompleted ? .green : .secondary)
                 }
@@ -563,6 +655,7 @@ struct RootView: View {
                     Button("Mark Next Complete") {
                         model.markNextMoveStepComplete()
                     }
+                    .buttonStyle(.bordered)
                     .disabled(model.allMovesCompleted)
 
                     Spacer()
@@ -570,11 +663,11 @@ struct RootView: View {
                     Button("Reset Progress") {
                         model.resetMoveProgress()
                     }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.borderless)
 
-                ForEach(Array(model.moveSteps.prefix(20).enumerated()), id: \.offset) { index, step in
-                    HStack(alignment: .top, spacing: 8) {
+                ForEach(Array(model.moveSteps.prefix(24).enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .top, spacing: 10) {
                         Button {
                             model.toggleMoveStepCompletion(step.id)
                         } label: {
@@ -587,7 +680,7 @@ struct RootView: View {
                             Text("\(index + 1). Move \(model.displayName(for: step.appID))")
                                 .font(.subheadline)
                                 .foregroundStyle(model.completedMoveStepIDs.contains(step.id) ? .secondary : .primary)
-                            Text("\(slotLabel(step.fromSlot)) → \(slotLabel(step.toSlot))")
+                            Text("\(slotLabel(step.fromSlot)) -> \(slotLabel(step.toSlot))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             if model.nextPendingMoveStepID == step.id {
@@ -597,9 +690,71 @@ struct RootView: View {
                             }
                         }
                     }
+                    .padding(.vertical, 2)
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func screenScroll<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                content()
+            }
+            .padding(16)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
+    private func card<Content: View>(
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            content()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+    }
+
+    private func slotStepper(
+        label: String,
+        decrement: @escaping () -> Void,
+        increment: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Button {
+                    decrement()
+                } label: {
+                    Image(systemName: "minus.circle")
+                }
+                Button {
+                    increment()
+                } label: {
+                    Image(systemName: "plus.circle")
+                }
+            }
+        }
+        .buttonStyle(.borderless)
     }
 
     private func weightSlider(title: String, value: Binding<Double>) -> some View {
@@ -628,6 +783,9 @@ struct RootView: View {
     }
 }
 
+#Preview {
+    RootView()
+}
 @MainActor
 final class RootViewModel: ObservableObject {
     @Published var profileName = ""
