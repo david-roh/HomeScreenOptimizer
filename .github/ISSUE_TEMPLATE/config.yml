@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Project documentation
+    url: https://github.com/david-roh/HomeScreenOptimizer#readme
+    about: Check setup and project context before opening an issue.
