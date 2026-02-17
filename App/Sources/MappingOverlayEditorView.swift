@@ -241,10 +241,13 @@ struct MappingOverlayEditorView: View {
     }
 
     private var visibleIndicesOnSelectedPage: [Int] {
+        let source: [Int]
         if markerFilter == .all {
-            return indicesOnSelectedPage
+            source = indicesOnSelectedPage
+        } else {
+            source = reviewIndicesOnSelectedPage.isEmpty ? indicesOnSelectedPage : reviewIndicesOnSelectedPage
         }
-        return reviewIndicesOnSelectedPage.isEmpty ? indicesOnSelectedPage : reviewIndicesOnSelectedPage
+        return dedupedIndicesBySlot(source)
     }
 
     private var widgetSlotsOnSelectedPage: [Slot] {
@@ -384,6 +387,14 @@ struct MappingOverlayEditorView: View {
             }
             .onChange(of: selectedPage) { _, _ in
                 if let selectedAppIndex, !indicesOnSelectedPage.contains(selectedAppIndex) {
+                    self.selectedAppIndex = nil
+                }
+            }
+            .onChange(of: model.detectedSlots) { _, _ in
+                guard let selectedAppIndex else {
+                    return
+                }
+                if !model.detectedSlots.indices.contains(selectedAppIndex) {
                     self.selectedAppIndex = nil
                 }
             }
@@ -715,6 +726,9 @@ struct MappingOverlayEditorView: View {
             column: slot.column,
             type: slot.type
         )
+        if model.detectedSlots.indices.contains(index) {
+            selectedAppIndex = index
+        }
     }
 
     private func beginRename(index: Int) {
@@ -812,5 +826,41 @@ struct MappingOverlayEditorView: View {
         if key.contains("music") { return "music.note" }
         if key.contains("settings") { return "gearshape.fill" }
         return "app.fill"
+    }
+
+    private func dedupedIndicesBySlot(_ indices: [Int]) -> [Int] {
+        var bestBySlot: [Slot: Int] = [:]
+
+        for index in indices {
+            guard model.detectedSlots.indices.contains(index) else {
+                continue
+            }
+            let detected = model.detectedSlots[index]
+            let key = detected.slot
+            guard let currentBest = bestBySlot[key] else {
+                bestBySlot[key] = index
+                continue
+            }
+
+            let current = model.detectedSlots[currentBest]
+            if shouldReplaceVisibleMarker(current: current, candidate: detected) {
+                bestBySlot[key] = index
+            }
+        }
+
+        return bestBySlot.values.sorted { lhs, rhs in
+            let left = model.detectedSlots[lhs]
+            let right = model.detectedSlots[rhs]
+            if left.slot.row != right.slot.row { return left.slot.row < right.slot.row }
+            if left.slot.column != right.slot.column { return left.slot.column < right.slot.column }
+            return left.appName.localizedCaseInsensitiveCompare(right.appName) == .orderedAscending
+        }
+    }
+
+    private func shouldReplaceVisibleMarker(current: DetectedAppSlot, candidate: DetectedAppSlot) -> Bool {
+        if candidate.confidence != current.confidence {
+            return candidate.confidence > current.confidence
+        }
+        return candidate.appName.count > current.appName.count
     }
 }

@@ -84,17 +84,11 @@ struct RootView: View {
     @State private var selectedPreset: OptimizationPreset = .balanced
     @State private var selectedVisualPattern: VisualPatternMode = .colorBands
     @State private var ignoreContextBaselineOnce = false
-    @State private var showTuneSheet = false
-    @State private var showManualUsageEditor = false
-    @State private var showMappingEditor = false
     @State private var showSetupAdvanced = false
-    @State private var showStyleDetailSheet = false
-    @State private var showFinalLayoutPreview = false
+    @State private var activeSheet: ActiveSheet?
     @State private var showPageList = false
     @State private var showLayoutPreview = false
     @State private var showAllMoves = false
-    @State private var showQuickStart = false
-    @State private var showProfileLibrary = false
     @State private var quickStartPage = 0
     @State private var fineTuneMode: FineTuneMode = .weights
     @AppStorage("hso_quick_start_seen_v2") private var quickStartSeen = false
@@ -195,6 +189,28 @@ struct RootView: View {
         let body: String
     }
 
+    private enum ActiveSheet: Identifiable {
+        case quickStart
+        case manualUsage
+        case mappingEditor
+        case styleDetails
+        case finalPreview
+        case profileLibrary
+        case fineTune
+
+        var id: String {
+            switch self {
+            case .quickStart: return "quickStart"
+            case .manualUsage: return "manualUsage"
+            case .mappingEditor: return "mappingEditor"
+            case .styleDetails: return "styleDetails"
+            case .finalPreview: return "finalPreview"
+            case .profileLibrary: return "profileLibrary"
+            case .fineTune: return "fineTune"
+            }
+        }
+    }
+
     private var tutorialCards: [TutorialCard] {
         [
             TutorialCard(icon: "figure.wave", title: "Set up once", body: "Pick hand/grip and choose intent."),
@@ -222,29 +238,27 @@ struct RootView: View {
             .animation(.easeInOut(duration: 0.22), value: selectedTab)
         }
         .background(stageBackground(for: selectedTab).ignoresSafeArea())
-        .sheet(isPresented: $showQuickStart) {
-            quickStartSheet
-        }
-        .sheet(isPresented: $showManualUsageEditor) {
-            manualUsageSheet
-        }
-        .sheet(isPresented: $showMappingEditor) {
-            mappingEditorSheet
-        }
-        .sheet(isPresented: $showStyleDetailSheet) {
-            styleDetailSheet
-        }
-        .sheet(isPresented: $showFinalLayoutPreview) {
-            HomeScreenLayoutPreviewView(model: model)
-        }
-        .sheet(isPresented: $showProfileLibrary) {
-            profileLibrarySheet
-        }
-        .sheet(isPresented: $showTuneSheet) {
-            tuneSheet
-                .presentationDetents([.fraction(0.50), .large])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.ultraThinMaterial)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .quickStart:
+                quickStartSheet
+            case .manualUsage:
+                manualUsageSheet
+            case .mappingEditor:
+                mappingEditorSheet
+            case .styleDetails:
+                styleDetailSheet
+            case .finalPreview:
+                HomeScreenLayoutPreviewView(model: model)
+            case .profileLibrary:
+                profileLibrarySheet
+            case .fineTune:
+                tuneSheet
+                    .presentationDetents([.height(430), .large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackgroundInteraction(.enabled)
+                    .presentationCompactAdaptation(.none)
+            }
         }
         .onAppear {
             model.loadProfiles()
@@ -255,7 +269,7 @@ struct RootView: View {
             model.visualPatternMode = selectedVisualPattern
             model.visualModeEnabled = selectedPreset == .visualHarmony
             if !quickStartSeen && !isUITesting {
-                showQuickStart = true
+                activeSheet = .quickStart
             }
         }
         .onChange(of: selectedPreset) { _, preset in
@@ -344,63 +358,6 @@ struct RootView: View {
         }
     }
 
-    private var stageStepper: some View {
-        HStack(spacing: 8) {
-            ForEach(Tab.allCases, id: \.self) { tab in
-                let isActive = tab == selectedTab
-                let unlocked = canAccess(tab)
-
-                Button {
-                    guard unlocked else {
-                        if let reason = blockedReason(for: tab) {
-                            model.presentStatus(reason, level: .info)
-                        }
-                        return
-                    }
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        selectedTab = tab
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: unlocked ? tab.icon : "lock.fill")
-                            .font(.caption2.weight(.semibold))
-                        Text(tab.title)
-                            .font(.caption.weight(isActive ? .semibold : .medium))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
-                    }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 7)
-                    .foregroundStyle(isActive ? Color.white : (unlocked ? Color.primary : Color.secondary))
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(isActive ? selectedTab.accent : Color(.secondarySystemGroupedBackground))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(isActive ? selectedTab.accent.opacity(0.25) : Color.clear, lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-
-            Spacer(minLength: 0)
-
-            if hasSavedProfile {
-                Button {
-                    showProfileLibrary = true
-                } label: {
-                    Image(systemName: "books.vertical")
-                        .font(.caption.weight(.semibold))
-                        .padding(8)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("open-profile-library")
-            }
-        }
-    }
-
     private func shouldShowStatusBanner(on tab: Tab) -> Bool {
         guard !model.statusMessage.isEmpty else {
             return false
@@ -416,7 +373,7 @@ struct RootView: View {
     private func stageHeader(for tab: Tab) -> some View {
         let voice = stageVoice(for: tab)
 
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Label(voice.badge, systemImage: voice.icon)
                     .font(.caption.weight(.semibold))
@@ -427,10 +384,9 @@ struct RootView: View {
                 Label("Step \(tabStepIndex(tab))/4", systemImage: tab.icon)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(tab.accent)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
                     .background(tab.accent.opacity(0.14), in: Capsule())
-                Spacer(minLength: 0)
                 Text("\(Int((stageCompletion(for: tab) * 100).rounded()))%")
                     .font(.caption.weight(.semibold))
                     .monospacedDigit()
@@ -443,23 +399,24 @@ struct RootView: View {
 
             ProgressView(value: stageCompletion(for: tab))
                 .tint(tab.accent)
+                .scaleEffect(x: 1, y: 0.9, anchor: .center)
 
             if let blocker = stageShortHint(for: tab), isPrimaryActionDisabled(for: tab) {
                 Label(blocker, systemImage: "exclamationmark.circle")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Label("Next: \(primaryActionLabel(for: tab))", systemImage: "arrow.right.circle.fill")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(tab.accent)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 8)
         .background(stageSurface(accent: tab.accent, cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -674,7 +631,7 @@ struct RootView: View {
                     }
 
                     Button {
-                        showStyleDetailSheet = true
+                        activeSheet = .styleDetails
                     } label: {
                         Label("How \(selectedPreset.title) works", systemImage: "info.circle")
                             .font(.subheadline.weight(.semibold))
@@ -688,7 +645,7 @@ struct RootView: View {
                 Button("Fine Tune") {
                     fineTuneMode = .weights
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        showTuneSheet = true
+                        activeSheet = .fineTune
                     }
                 }
                 .buttonStyle(.bordered)
@@ -790,7 +747,7 @@ struct RootView: View {
 
                         HStack {
                             Button("Edit Mappings") {
-                                showMappingEditor = true
+                                activeSheet = .mappingEditor
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(Tab.importData.accent)
@@ -897,7 +854,7 @@ struct RootView: View {
                     .disabled(model.selectedProfileID == nil)
 
                     Button("Edit Minutes") {
-                        showManualUsageEditor = true
+                        activeSheet = .manualUsage
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Tab.plan.accent)
@@ -959,7 +916,7 @@ struct RootView: View {
 
             if !model.recommendedLayoutAssignments.isEmpty {
                 Button {
-                    showFinalLayoutPreview = true
+                    activeSheet = .finalPreview
                 } label: {
                     Label("Preview Final Layout", systemImage: "iphone.gen3")
                         .frame(maxWidth: .infinity)
@@ -1059,7 +1016,7 @@ struct RootView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
-                        showManualUsageEditor = false
+                        activeSheet = nil
                     }
                 }
             }
@@ -1094,7 +1051,7 @@ struct RootView: View {
                     .buttonStyle(.bordered)
 
                     Button("Preview") {
-                        showFinalLayoutPreview = true
+                        activeSheet = .finalPreview
                     }
                     .buttonStyle(.bordered)
                     .accessibilityIdentifier("preview-final-layout")
@@ -1156,7 +1113,7 @@ struct RootView: View {
                 Spacer()
                 Button("Done") {
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        showTuneSheet = false
+                        activeSheet = nil
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -1291,7 +1248,7 @@ struct RootView: View {
                         }
                     } else {
                         quickStartSeen = true
-                        showQuickStart = false
+                        activeSheet = nil
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -1299,7 +1256,7 @@ struct RootView: View {
 
                 Button("Skip") {
                     quickStartSeen = true
-                    showQuickStart = false
+                    activeSheet = nil
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
@@ -1332,7 +1289,7 @@ struct RootView: View {
                                 model.loadSelectedProfileIntoEditor()
                                 syncPresetFromModelWeights()
                                 selectedTab = .setup
-                                showProfileLibrary = false
+                                activeSheet = nil
                             } label: {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(profile.name)
@@ -1351,7 +1308,7 @@ struct RootView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
-                        showProfileLibrary = false
+                        activeSheet = nil
                     }
                 }
             }
@@ -1543,7 +1500,7 @@ struct RootView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
-                        showStyleDetailSheet = false
+                        activeSheet = nil
                     }
                 }
             }
