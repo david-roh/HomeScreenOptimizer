@@ -535,11 +535,10 @@ struct MappingOverlayEditorView: View {
         ForEach(widgetSlotsOnSelectedPage, id: \.self) { slot in
             let x = appRect.minX + (CGFloat(slot.column) + 0.5) * cellWidth
             let y = appRect.minY + (CGFloat(slot.row) + 0.5) * cellHeight
-            Label("Widget", systemImage: "square.grid.2x2.fill")
+            Image(systemName: "square.grid.2x2.fill")
                 .font(.system(size: 9, weight: .semibold))
-                .padding(.horizontal, 5)
-                .padding(.vertical, 3)
-                .background(Color.orange.opacity(0.24), in: Capsule())
+                .padding(5)
+                .background(Color.orange.opacity(0.30), in: Circle())
                 .foregroundStyle(.orange)
                 .position(x: x, y: y)
         }

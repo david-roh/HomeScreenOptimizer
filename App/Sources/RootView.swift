@@ -61,6 +61,7 @@ struct RootView: View {
     @State private var showTuneSheet = false
     @State private var showManualUsageEditor = false
     @State private var showMappingEditor = false
+    @State private var showSetupAdvanced = false
     @State private var showStyleDetailSheet = false
     @State private var showFinalLayoutPreview = false
     @State private var showPageList = false
@@ -263,6 +264,9 @@ struct RootView: View {
             }
 
             model.applyContextBaseline(for: newContext)
+            if newContext == .custom {
+                showSetupAdvanced = true
+            }
             syncPresetFromModelWeights()
         }
         .onChange(of: model.selectedProfileID) { _, _ in
@@ -500,102 +504,126 @@ struct RootView: View {
                 .autocorrectionDisabled()
                 .textFieldStyle(.roundedBorder)
 
-            pickerRow(title: "Context", icon: "calendar", selection: $model.context) {
-                ForEach(ProfileContext.allCases, id: \.self) { value in
-                    Text(value.displayTitle).tag(value)
+            HStack(spacing: 8) {
+                compactSetupPicker(title: "Context", icon: "calendar", selection: $model.context) {
+                    ForEach(ProfileContext.allCases, id: \.self) { value in
+                        Text(value.displayTitle).tag(value)
+                    }
+                }
+
+                compactSetupPicker(title: "Hand", icon: "hand.point.up.left", selection: $model.handedness) {
+                    ForEach(Handedness.allCases, id: \.self) { value in
+                        Text(value.displayTitle).tag(value)
+                    }
+                }
+
+                compactSetupPicker(title: "Grip", icon: "iphone", selection: $model.gripMode) {
+                    ForEach(GripMode.allCases, id: \.self) { value in
+                        Text(value.displayTitle).tag(value)
+                    }
                 }
             }
 
-            Text(contextBehaviorHint(for: model.context))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            if model.context == .custom {
-                TextField("Custom context label (e.g. Commute)", text: $model.customContextLabel)
-                    .textInputAutocapitalization(.words)
-                    .autocorrectionDisabled()
-                    .textFieldStyle(.roundedBorder)
-            }
-
-            pickerRow(title: "Hand", icon: "hand.point.up.left", selection: $model.handedness) {
-                ForEach(Handedness.allCases, id: \.self) { value in
-                    Text(value.displayTitle).tag(value)
-                }
-            }
-
-            pickerRow(title: "Grip", icon: "iphone", selection: $model.gripMode) {
-                ForEach(GripMode.allCases, id: \.self) { value in
-                    Text(value.displayTitle).tag(value)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Intent")
                     .font(.subheadline.weight(.semibold))
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
                     ForEach(OptimizationPreset.allCases) { preset in
-                        stylePresetCard(preset)
+                            Button {
+                                applyPreset(preset)
+                            } label: {
+                                Label(preset.title, systemImage: preset.iconName)
+                                    .font(.subheadline.weight(.semibold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(selectedPreset == preset ? Tab.setup.accent.opacity(0.18) : Color(.tertiarySystemFill))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .stroke(selectedPreset == preset ? Tab.setup.accent : .clear, lineWidth: 1.2)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
 
-                Button {
-                    showStyleDetailSheet = true
-                } label: {
-                    Label("How \(selectedPreset.title) works", systemImage: "info.circle")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Tab.setup.accent)
-            }
-
-            if selectedPreset == .visualHarmony {
-                pickerRow(title: "Visual Pattern", icon: "paintpalette", selection: $selectedVisualPattern) {
-                    ForEach(VisualPatternMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-
-                Text(selectedVisualPattern.detail)
-                    .font(.caption2)
+                Text(selectedPreset.shortDescription)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            if !model.dockPinCandidates.isEmpty {
+            DisclosureGroup("More options", isExpanded: $showSetupAdvanced) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Dock Policy")
-                        .font(.subheadline.weight(.semibold))
-
-                    Toggle("Keep current Dock apps sticky", isOn: $model.keepCurrentDockApps)
-                        .tint(Tab.setup.accent)
-                    Toggle("Prioritize essential apps (Phone, Messages, Maps)", isOn: $model.prioritizeEssentialDockApps)
-                        .tint(Tab.setup.accent)
-
-                    Text("Always in Dock")
-                        .font(.caption.weight(.semibold))
+                    Text(contextBehaviorHint(for: model.context))
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
 
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(model.dockPinCandidates, id: \.self) { appName in
-                                let pinned = model.isDockPinned(appName)
-                                Button {
-                                    model.toggleDockPin(appName)
-                                } label: {
-                                    Label(appName, systemImage: pinned ? "pin.fill" : "pin")
-                                        .font(.caption.weight(.semibold))
-                                        .lineLimit(1)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 7)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                .fill(pinned ? Tab.setup.accent.opacity(0.20) : Color(.tertiarySystemFill))
-                                        )
+                    if model.context == .custom {
+                        TextField("Custom context label (e.g. Commute)", text: $model.customContextLabel)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    if selectedPreset == .visualHarmony {
+                        pickerRow(title: "Visual Pattern", icon: "paintpalette", selection: $selectedVisualPattern) {
+                            ForEach(VisualPatternMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+
+                        Text(selectedVisualPattern.detail)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if !model.dockPinCandidates.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Dock Policy")
+                                .font(.subheadline.weight(.semibold))
+
+                            Toggle("Keep current Dock apps sticky", isOn: $model.keepCurrentDockApps)
+                                .tint(Tab.setup.accent)
+                            Toggle("Prioritize essential apps (Phone, Messages, Maps)", isOn: $model.prioritizeEssentialDockApps)
+                                .tint(Tab.setup.accent)
+
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(model.dockPinCandidates, id: \.self) { appName in
+                                        let pinned = model.isDockPinned(appName)
+                                        Button {
+                                            model.toggleDockPin(appName)
+                                        } label: {
+                                            Label(appName, systemImage: pinned ? "pin.fill" : "pin")
+                                                .font(.caption.weight(.semibold))
+                                                .lineLimit(1)
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 7)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                        .fill(pinned ? Tab.setup.accent.opacity(0.20) : Color(.tertiarySystemFill))
+                                                )
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
+
+                    Button {
+                        showStyleDetailSheet = true
+                    } label: {
+                        Label("How \(selectedPreset.title) works", systemImage: "info.circle")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Tab.setup.accent)
                 }
             }
 
@@ -1063,15 +1091,13 @@ struct RootView: View {
     private var tuneSheet: some View {
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
-                LinearGradient(
-                    colors: [
-                        Color(.systemBackground),
-                        Tab.setup.backgroundTop.opacity(0.30)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                Color.black.opacity(0.28)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        showTuneSheet = false
+                        syncPresetFromModelWeights()
+                    }
 
                 VStack(spacing: 12) {
                     Capsule()
@@ -1174,7 +1200,7 @@ struct RootView: View {
                 .padding(.top, 10)
                 .padding(.bottom, max(14, proxy.safeAreaInsets.bottom))
                 .frame(maxWidth: .infinity)
-                .frame(height: max(420, proxy.size.height * 0.62))
+                .frame(height: max(390, proxy.size.height * 0.58))
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 26, style: .continuous)
@@ -1294,6 +1320,30 @@ struct RootView: View {
             .labelsHidden()
             .pickerStyle(.menu)
         }
+    }
+
+    private func compactSetupPicker<Selection: Hashable, Content: View>(
+        title: String,
+        icon: String,
+        selection: Binding<Selection>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: icon)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Picker(title, selection: selection) {
+                content()
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func metricPill(title: String, value: String) -> some View {
@@ -2956,6 +3006,7 @@ final class RootViewModel: ObservableObject {
                 pages: pages,
                 locatedCandidatesByPage: locatedCandidatesByPage
             )
+            purgeDockPlaceholders()
             detectedIconPreviewDataBySlot = buildDetectedIconPreviewMap(from: pages, slots: detectedSlots)
             originalDetectedSlots = detectedSlots
             originalWidgetLockedSlots = widgetLockedSlots
@@ -3675,11 +3726,10 @@ final class RootViewModel: ObservableObject {
 
                 if candidateName == nil {
                     if slot.type == .dock {
-                        candidateName = "Dock Slot \(slot.column + 1)"
-                    } else {
-                        candidateName = "Unlabeled \(unlabeledCounter)"
-                        unlabeledCounter += 1
+                        continue
                     }
+                    candidateName = "Unlabeled \(unlabeledCounter)"
+                    unlabeledCounter += 1
                 }
 
                 let normalizedName = normalizeDetectedAppName(candidateName ?? "")
@@ -3706,6 +3756,7 @@ final class RootViewModel: ObservableObject {
         if inferredCount > 0 {
             sortDetectedSlots()
         }
+        collapseDuplicateCanonicalDetections()
         return inferredCount
     }
 
@@ -3736,7 +3787,80 @@ final class RootViewModel: ObservableObject {
             }
             return false
         }
+        collapseDuplicateCanonicalDetections()
         sortDetectedSlots()
+    }
+
+    private func collapseDuplicateCanonicalDetections() {
+        var grouped: [String: [Int]] = [:]
+        for index in detectedSlots.indices {
+            let canonical = canonicalAppName(detectedSlots[index].appName)
+            guard !canonical.isEmpty else {
+                continue
+            }
+            grouped[canonical, default: []].append(index)
+        }
+
+        var toRemove: Set<Int> = []
+        for (_, indices) in grouped where indices.count > 1 {
+            let sorted = indices.sorted { lhs, rhs in
+                let left = duplicateCandidateRank(detectedSlots[lhs])
+                let right = duplicateCandidateRank(detectedSlots[rhs])
+                if left != right {
+                    return left > right
+                }
+                return detectedSlots[lhs].confidence > detectedSlots[rhs].confidence
+            }
+            guard let keep = sorted.first else {
+                continue
+            }
+            for index in sorted where index != keep {
+                let slot = detectedSlots[index].slot
+                if slot.type == .app, slot.row <= 1 {
+                    widgetLockedSlots.append(
+                        Slot(page: slot.page, row: slot.row, column: slot.column, type: .widgetLocked)
+                    )
+                }
+                toRemove.insert(index)
+            }
+        }
+
+        if !toRemove.isEmpty {
+            detectedSlots = detectedSlots.enumerated().compactMap { index, item in
+                toRemove.contains(index) ? nil : item
+            }
+            widgetLockedSlots = Array(Set(widgetLockedSlots)).sorted { lhs, rhs in
+                if lhs.page != rhs.page { return lhs.page < rhs.page }
+                if lhs.row != rhs.row { return lhs.row < rhs.row }
+                return lhs.column < rhs.column
+            }
+        }
+    }
+
+    private func purgeDockPlaceholders() {
+        detectedSlots.removeAll { detected in
+            guard detected.slot.type == .dock else {
+                return false
+            }
+            let canonical = canonicalAppName(detected.appName)
+            let placeholder = canonical.hasPrefix("dock slot") || canonical.hasPrefix("unlabeled")
+            return placeholder && detected.confidence < 0.75
+        }
+        sortDetectedSlots()
+    }
+
+    private func duplicateCandidateRank(_ detected: DetectedAppSlot) -> Double {
+        var score = detected.confidence
+        if detected.slot.type == .app {
+            score += 0.10
+            score += Double(detected.slot.row) * 0.04
+        } else {
+            score += 0.02
+        }
+        if isWidgetLocked(detected.slot) {
+            score -= 0.40
+        }
+        return score
     }
 
     private func isLikelyWidgetNoiseName(_ canonicalName: String) -> Bool {
@@ -3775,11 +3899,11 @@ final class RootViewModel: ObservableObject {
 
         let request = VNDetectRectanglesRequest()
         request.maximumObservations = 32
-        request.minimumSize = 0.08
-        request.minimumAspectRatio = 0.45
-        request.maximumAspectRatio = 2.30
-        request.minimumConfidence = 0.45
-        request.quadratureTolerance = 24.0
+        request.minimumSize = 0.14
+        request.minimumAspectRatio = 0.70
+        request.maximumAspectRatio = 2.00
+        request.minimumConfidence = 0.55
+        request.quadratureTolerance = 18.0
 
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         do {
@@ -3791,7 +3915,7 @@ final class RootViewModel: ObservableObject {
         let gridHeight = max(appGridBottomY - appGridTopY, 0.0001)
         let cellWidth = 1.0 / Double(columns)
         let cellHeight = gridHeight / Double(rows)
-        let minimumWidgetArea = cellWidth * cellHeight * 1.9
+        let minimumWidgetArea = cellWidth * cellHeight * 2.8
 
         var locked: Set<Slot> = []
         for observation in request.results ?? [] {
@@ -3809,10 +3933,14 @@ final class RootViewModel: ObservableObject {
             if normalizedTopRect.minY < appGridTopY - 0.05 {
                 continue
             }
+            let maxWidgetRowStart = appGridTopY + (cellHeight * 3.2)
+            if normalizedTopRect.minY > maxWidgetRowStart {
+                continue
+            }
             if Double(normalizedTopRect.width * normalizedTopRect.height) < minimumWidgetArea {
                 continue
             }
-            if normalizedTopRect.width < CGFloat(cellWidth * 1.35) || normalizedTopRect.height < CGFloat(cellHeight * 1.35) {
+            if normalizedTopRect.width < CGFloat(cellWidth * 1.45) || normalizedTopRect.height < CGFloat(cellHeight * 1.45) {
                 continue
             }
 
@@ -3829,7 +3957,7 @@ final class RootViewModel: ObservableObject {
                         continue
                     }
                     let overlapRatio = (overlap.width * overlap.height) / (cellRect.width * cellRect.height)
-                    if overlapRatio >= 0.33 {
+                    if overlapRatio >= 0.45 {
                         locked.insert(Slot(page: page, row: row, column: column, type: .widgetLocked))
                     }
                 }
