@@ -3007,6 +3007,7 @@ final class RootViewModel: ObservableObject {
                 locatedCandidatesByPage: locatedCandidatesByPage
             )
             purgeDockPlaceholders()
+            reconcileWidgetLocksWithApps()
             detectedIconPreviewDataBySlot = buildDetectedIconPreviewMap(from: pages, slots: detectedSlots)
             originalDetectedSlots = detectedSlots
             originalWidgetLockedSlots = widgetLockedSlots
@@ -3711,6 +3712,15 @@ final class RootViewModel: ObservableObject {
                     )
                 }
 
+                if candidateName == nil, slot.type == .app {
+                    candidateName = classifyAppIconHint(
+                        for: slot,
+                        in: cgImage,
+                        rows: rows,
+                        columns: columns
+                    )
+                }
+
                 if candidateName == nil, slot.type == .dock {
                     candidateName = classifyDockIconHint(
                         for: slot,
@@ -3847,6 +3857,22 @@ final class RootViewModel: ObservableObject {
             return placeholder && detected.confidence < 0.75
         }
         sortDetectedSlots()
+    }
+
+    private func reconcileWidgetLocksWithApps() {
+        let appSlotsByConfidence = Dictionary(uniqueKeysWithValues: detectedSlots.map { ($0.slot, $0.confidence) })
+        widgetLockedSlots = widgetLockedSlots.filter { locked in
+            let appSlot = Slot(page: locked.page, row: locked.row, column: locked.column, type: .app)
+            guard let confidence = appSlotsByConfidence[appSlot] else {
+                return true
+            }
+            return confidence < 0.86
+        }
+        widgetLockedSlots = Array(Set(widgetLockedSlots)).sorted { lhs, rhs in
+            if lhs.page != rhs.page { return lhs.page < rhs.page }
+            if lhs.row != rhs.row { return lhs.row < rhs.row }
+            return lhs.column < rhs.column
+        }
     }
 
     private func duplicateCandidateRank(_ detected: DetectedAppSlot) -> Double {
@@ -4116,7 +4142,56 @@ final class RootViewModel: ObservableObject {
               let crop = image.cropping(to: cropRect) else {
             return nil
         }
+        return classifyIconHint(from: crop, minimumConfidence: 0.16)
+#else
+        _ = slot
+        _ = image
+        _ = rows
+        _ = columns
+        return nil
+#endif
+    }
 
+    private func classifyAppIconHint(
+        for slot: Slot,
+        in image: CGImage,
+        rows: Int,
+        columns: Int
+    ) -> String? {
+#if canImport(Vision)
+        guard slot.type == .app,
+              let iconRect = iconCropRectForSlot(
+                  slot: slot,
+                  imageWidth: CGFloat(image.width),
+                  imageHeight: CGFloat(image.height),
+                  rows: rows,
+                  columns: columns
+              ) else {
+            return nil
+        }
+
+        let imageBounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        let cropRect = iconRect.integral.intersection(imageBounds)
+        guard !cropRect.isNull, cropRect.width > 8, cropRect.height > 8,
+              let crop = image.cropping(to: cropRect) else {
+            return nil
+        }
+
+        return classifyIconHint(from: crop, minimumConfidence: 0.18)
+#else
+        _ = slot
+        _ = image
+        _ = rows
+        _ = columns
+        return nil
+#endif
+    }
+
+    private func classifyIconHint(
+        from crop: CGImage,
+        minimumConfidence: VNConfidence
+    ) -> String? {
+#if canImport(Vision)
         let request = VNClassifyImageRequest()
         let handler = VNImageRequestHandler(cgImage: crop, options: [:])
         do {
@@ -4127,20 +4202,40 @@ final class RootViewModel: ObservableObject {
 
         let mapping: [(needle: String, app: String)] = [
             ("compass", "Safari"),
+            ("browser", "Safari"),
             ("speech", "Messages"),
             ("chat", "Messages"),
+            ("bubble", "Messages"),
             ("envelope", "Mail"),
             ("phone", "Phone"),
             ("telephone", "Phone"),
             ("map", "Maps"),
+            ("navigation", "Maps"),
+            ("calendar", "Calendar"),
+            ("date", "Calendar"),
+            ("photo", "Photos"),
+            ("image", "Photos"),
+            ("newspaper", "News"),
+            ("news", "News"),
             ("camera", "Camera"),
             ("wallet", "Wallet"),
-            ("music", "Music")
+            ("heart", "Health"),
+            ("health", "Health"),
+            ("gear", "Settings"),
+            ("settings", "Settings"),
+            ("reminder", "Reminders"),
+            ("check", "Reminders"),
+            ("folder", "Files"),
+            ("document", "Files"),
+            ("music", "Music"),
+            ("contact", "Contacts"),
+            ("person", "Contacts"),
+            ("fitness", "Fitness")
         ]
 
-        for result in request.results?.prefix(8) ?? [] {
+        for result in request.results?.prefix(12) ?? [] {
             let key = result.identifier.lowercased()
-            guard result.confidence >= 0.16 else {
+            guard result.confidence >= minimumConfidence else {
                 continue
             }
             if let match = mapping.first(where: { key.contains($0.needle) }) {
@@ -4149,10 +4244,8 @@ final class RootViewModel: ObservableObject {
         }
         return nil
 #else
-        _ = slot
-        _ = image
-        _ = rows
-        _ = columns
+        _ = crop
+        _ = minimumConfidence
         return nil
 #endif
     }
@@ -4349,9 +4442,6 @@ final class RootViewModel: ObservableObject {
         }
 
         let count = Double(sampleWidth * sampleHeight)
-        guard count > 0 else {
-            return nil
-        }
 
         let meanL = sumL / count
         let varianceL = max(0, (sumL2 / count) - (meanL * meanL))
