@@ -14,11 +14,11 @@ struct UsageSummaryConfiguration {
 }
 
 @preconcurrency
-struct UsageSummaryReport: DeviceActivityReportScene {
+struct UsageSummaryReport: @MainActor DeviceActivityReportScene {
     let context: DeviceActivityReport.Context = .hsoUsageSummary
     let content: (UsageSummaryConfiguration) -> UsageSummaryView
 
-    func makeConfiguration(representing data: DeviceActivityResults<DeviceActivityData>) async -> UsageSummaryConfiguration {
+    nonisolated func makeConfiguration(representing data: DeviceActivityResults<DeviceActivityData>) async -> UsageSummaryConfiguration {
         var minuteByCanonicalName: [String: Double] = [:]
         var displayNameByCanonicalName: [String: String] = [:]
 
@@ -65,7 +65,7 @@ struct UsageSummaryReport: DeviceActivityReportScene {
                 return lhs.appName.localizedCaseInsensitiveCompare(rhs.appName) == .orderedAscending
             }
 
-        persist(entries: entries)
+        Self.persist(entries: entries)
 
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.hour, .minute]
@@ -80,7 +80,7 @@ struct UsageSummaryReport: DeviceActivityReportScene {
         return UsageSummaryConfiguration(totalActivityText: totalActivityText, entries: entries)
     }
 
-    private func persist(entries: [ScreenTimeUsageEntry]) {
+    private nonisolated static func persist(entries: [ScreenTimeUsageEntry]) {
         guard let defaults = UserDefaults(suiteName: SharedScreenTimeBridge.appGroupID) else {
             return
         }
