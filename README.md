@@ -30,6 +30,17 @@ swift test --enable-code-coverage
 swift run HSOPrototype
 ```
 
+### Mapping debug harness
+Use the prototype executable to inspect OCR + slot mapping for a specific screenshot:
+```bash
+swift run HSOPrototype --analyze-screenshot /absolute/path/to/home-screen.png
+```
+
+It prints:
+- Total OCR labels detected
+- App mappings (grid vs dock + slot coordinates)
+- Widget-locked cells inferred by heuristics
+
 ## Run iOS app in simulator
 ```bash
 xcodegen generate
