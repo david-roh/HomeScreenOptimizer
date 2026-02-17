@@ -136,8 +136,13 @@ public struct HomeScreenGridMapper: Sendable {
         )
         var combinedWidgetSlots = inferredWidgetSlots
         combinedWidgetSlots.formUnion(deduped.widgetSlots)
+        let filteredApps = removeLikelyWidgetGhostApps(
+            deduped.apps,
+            widgetSlots: combinedWidgetSlots,
+            page: page
+        )
 
-        let sorted = deduped.apps.sorted { lhs, rhs in
+        let sorted = filteredApps.sorted { lhs, rhs in
             if lhs.slot.page != rhs.slot.page {
                 return lhs.slot.page < rhs.slot.page
             }
@@ -442,6 +447,41 @@ public struct HomeScreenGridMapper: Sendable {
             .map(\.detected)
 
         return (filtered, widgetSlots)
+    }
+
+    private func removeLikelyWidgetGhostApps(
+        _ apps: [DetectedAppSlot],
+        widgetSlots: Set<Slot>,
+        page: Int
+    ) -> [DetectedAppSlot] {
+        guard !apps.isEmpty else {
+            return apps
+        }
+
+        var grouped: [String: [DetectedAppSlot]] = [:]
+        for app in apps where app.slot.page == page && app.slot.type == .app {
+            let key = normalizedText(app.appName)
+            guard !key.isEmpty else {
+                continue
+            }
+            grouped[key, default: []].append(app)
+        }
+
+        var rejected = Set<Slot>()
+        for entries in grouped.values where entries.count > 1 {
+            let nonWidget = entries.filter { !widgetSlots.contains($0.slot) }
+            guard !nonWidget.isEmpty else {
+                continue
+            }
+            for candidate in entries where widgetSlots.contains(candidate.slot) {
+                rejected.insert(candidate.slot)
+            }
+        }
+
+        if rejected.isEmpty {
+            return apps
+        }
+        return apps.filter { !rejected.contains($0.slot) }
     }
 
     private func normalizedText(_ text: String) -> String {

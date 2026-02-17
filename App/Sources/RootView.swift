@@ -20,6 +20,32 @@ import Usage
 import Vision
 #endif
 
+@MainActor
+private enum RootIconImageCache {
+    private static let dataCache = NSCache<NSString, UIImage>()
+
+    static func image(from data: Data) -> UIImage? {
+        let key = dataKey(for: data) as NSString
+        if let cached = dataCache.object(forKey: key) {
+            return cached
+        }
+        guard let image = UIImage(data: data) else {
+            return nil
+        }
+        dataCache.setObject(image, forKey: key)
+        return image
+    }
+
+    private static func dataKey(for data: Data) -> String {
+        var hasher = Hasher()
+        hasher.combine(data.count)
+        for byte in data.prefix(128) {
+            hasher.combine(byte)
+        }
+        return String(hasher.finalize())
+    }
+}
+
 enum VisualPatternMode: String, CaseIterable, Codable, Sendable, Identifiable {
     case colorBands
     case rainbowPath
@@ -214,12 +240,11 @@ struct RootView: View {
         .sheet(isPresented: $showProfileLibrary) {
             profileLibrarySheet
         }
-        .overlay {
-            if showTuneSheet {
-                fineTuneOverlay
-                    .transition(.opacity)
-                    .zIndex(5)
-            }
+        .sheet(isPresented: $showTuneSheet) {
+            tuneSheet
+                .presentationDetents([.fraction(0.50), .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
         }
         .onAppear {
             model.loadProfiles()
@@ -295,7 +320,6 @@ struct RootView: View {
     private func stageScaffold<Content: View>(for tab: Tab, @ViewBuilder content: () -> Content) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                stageStepper
                 stageHeader(for: tab)
 
                 if shouldShowStatusBanner(on: tab) {
@@ -306,7 +330,7 @@ struct RootView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
 
                 Color.clear
-                    .frame(height: 82)
+                    .frame(height: 8)
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
@@ -404,25 +428,16 @@ struct RootView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(tab.accent.opacity(0.14), in: Capsule())
-            }
-
-            HStack(alignment: .top) {
-                Text(tab.headline)
-                    .font(.headline.weight(.semibold))
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer()
+                Spacer(minLength: 0)
                 Text("\(Int((stageCompletion(for: tab) * 100).rounded()))%")
                     .font(.caption.weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
 
-            Text(voice.prompt)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(tab.headline)
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
 
             ProgressView(value: stageCompletion(for: tab))
                 .tint(tab.accent)
@@ -516,40 +531,32 @@ struct RootView: View {
     private var setupCard: some View {
         card(title: "Grip Profile") {
             if !model.savedProfiles.isEmpty {
-                HStack(spacing: 10) {
-                    Menu {
-                        ForEach(model.savedProfiles) { profile in
-                            Button {
-                                model.selectedProfileID = profile.id
-                            } label: {
-                                Text(profile.name)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
+                Menu {
+                    ForEach(model.savedProfiles) { profile in
+                        Button {
+                            model.selectedProfileID = profile.id
+                            ignoreContextBaselineOnce = true
+                            model.loadSelectedProfileIntoEditor()
+                            syncPresetFromModelWeights()
+                        } label: {
+                            Text(ProfileNameResolver.middleTruncated(profile.name, maxCharacters: 34))
                         }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "person.crop.circle")
-                                .foregroundStyle(.secondary)
-                            Text(model.activeProfileName ?? "Select profile")
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer()
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 9)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-
-                    Button("Load") {
-                        ignoreContextBaselineOnce = true
-                        model.loadSelectedProfileIntoEditor()
-                        syncPresetFromModelWeights()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.crop.circle")
+                            .foregroundStyle(.secondary)
+                        Text(model.activeProfileName.map { ProfileNameResolver.middleTruncated($0, maxCharacters: 34) } ?? "Select profile")
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.bordered)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
             }
 
@@ -1134,40 +1141,8 @@ struct RootView: View {
         }
     }
 
-    private var fineTuneOverlay: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .bottom) {
-                Color.black.opacity(0.38)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showTuneSheet = false
-                        }
-                    }
-
-                tuneSheet
-                    .frame(maxWidth: .infinity)
-                    .frame(height: min(max(320, proxy.size.height * 0.46), 390))
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(Color.white.opacity(0.38), lineWidth: 1)
-                    )
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 8)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .ignoresSafeArea()
-    }
-
     private var tuneSheet: some View {
-        VStack(spacing: 12) {
-            Capsule()
-                .fill(Color.secondary.opacity(0.35))
-                .frame(width: 38, height: 5)
-                .padding(.top, 8)
-
+        VStack(spacing: 10) {
             HStack {
                 Text("Fine Tune")
                     .font(.system(.title, design: .rounded).weight(.bold))
@@ -1189,81 +1164,78 @@ struct RootView: View {
             }
             .pickerStyle(.segmented)
 
-            ScrollView(showsIndicators: false) {
-                if fineTuneMode == .weights {
-                    VStack(alignment: .leading, spacing: 8) {
-                        weightRow(
-                            title: "Utility",
-                            detail: "",
-                            value: utilityWeightBinding,
-                            accent: Tab.setup.accent
-                        )
-                        weightRow(
-                            title: "Flow",
-                            detail: "",
-                            value: flowWeightBinding,
-                            accent: Tab.setup.accent
-                        )
-                        weightRow(
-                            title: "Aesthetics",
-                            detail: "",
-                            value: aestheticsWeightBinding,
-                            accent: Tab.setup.accent
-                        )
-                        weightRow(
-                            title: "Move Cost",
-                            detail: "",
-                            value: moveCostWeightBinding,
-                            accent: Tab.setup.accent
-                        )
-                    }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color(.secondarySystemBackground))
+            if fineTuneMode == .weights {
+                VStack(alignment: .leading, spacing: 8) {
+                    weightRow(
+                        title: "Utility",
+                        detail: "",
+                        value: utilityWeightBinding,
+                        accent: Tab.setup.accent
                     )
-                } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text(model.calibrationCurrentTarget == nil ? "No active session" : "Tap highlighted target")
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Text(model.calibrationProgressLabel)
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Button(model.calibrationInProgress ? "Restart Calibration" : "Start Calibration") {
-                            model.startCalibration()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Tab.setup.accent)
-
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                            ForEach(calibrationCoordinates, id: \.id) { coordinate in
-                                Button("\(coordinate.row + 1),\(coordinate.column + 1)") {
-                                    model.handleCalibrationTap(row: coordinate.row, column: coordinate.column)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(model.calibrationButtonTint(row: coordinate.row, column: coordinate.column))
-                                .disabled(!model.calibrationInProgress)
-                                .font(.caption.weight(.semibold))
-                                .controlSize(.small)
-                            }
-                        }
-                    }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color(.secondarySystemBackground))
+                    weightRow(
+                        title: "Flow",
+                        detail: "",
+                        value: flowWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                    weightRow(
+                        title: "Aesthetics",
+                        detail: "",
+                        value: aestheticsWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                    weightRow(
+                        title: "Move Cost",
+                        detail: "",
+                        value: moveCostWeightBinding,
+                        accent: Tab.setup.accent
                     )
                 }
-            }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
+                )
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(model.calibrationCurrentTarget == nil ? "No active session" : "Tap highlighted target")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(model.calibrationProgressLabel)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
 
-            Spacer(minLength: 0)
+                    Button(model.calibrationInProgress ? "Restart Calibration" : "Start Calibration") {
+                        model.startCalibration()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Tab.setup.accent)
+
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                        ForEach(calibrationCoordinates, id: \.id) { coordinate in
+                            Button("\(coordinate.row + 1),\(coordinate.column + 1)") {
+                                model.handleCalibrationTap(row: coordinate.row, column: coordinate.column)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(model.calibrationButtonTint(row: coordinate.row, column: coordinate.column))
+                            .disabled(!model.calibrationInProgress)
+                            .font(.caption.weight(.semibold))
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
+                )
+            }
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 12)
+        .presentationCompactAdaptation(.none)
         .accessibilityIdentifier("fine-tune-sheet")
         .onDisappear {
             syncPresetFromModelWeights()
@@ -1585,7 +1557,7 @@ struct RootView: View {
     private func detectedIconPreview(for detected: DetectedAppSlot) -> some View {
         Group {
             if let data = model.detectedIconPreviewDataBySlot[detected.slot],
-               let image = UIImage(data: data) {
+               let image = RootIconImageCache.image(from: data) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
@@ -1704,6 +1676,22 @@ struct RootView: View {
     }
 
     private func advanceFrom(stage: Tab) {
+        if bypassGuidedTabValidation {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                switch stage {
+                case .setup:
+                    selectedTab = .importData
+                case .importData:
+                    selectedTab = .plan
+                case .plan:
+                    selectedTab = .apply
+                case .apply:
+                    break
+                }
+            }
+            return
+        }
+
         switch stage {
         case .setup:
             if canOpenImport {

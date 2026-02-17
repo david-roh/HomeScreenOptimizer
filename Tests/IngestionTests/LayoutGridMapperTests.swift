@@ -241,6 +241,43 @@ final class LayoutGridMapperTests: XCTestCase {
         }
     }
 
+    func testMapRemovesDuplicateAppInsideWidgetLockedAreaWhenLowerMatchExists() {
+        let mapper = HomeScreenGridMapper()
+        let input = [
+            LocatedOCRLabelCandidate(
+                text: "No Events Today",
+                confidence: 0.99,
+                centerX: 0.24,
+                centerY: 0.84,
+                boxWidth: 0.34,
+                boxHeight: 0.10
+            ),
+            LocatedOCRLabelCandidate(
+                text: "Maps",
+                confidence: 0.95,
+                centerX: 0.24,
+                centerY: 0.79,
+                boxWidth: 0.11,
+                boxHeight: 0.03
+            ),
+            LocatedOCRLabelCandidate(
+                text: "Maps",
+                confidence: 0.90,
+                centerX: 0.24,
+                centerY: 0.46,
+                boxWidth: 0.11,
+                boxHeight: 0.03
+            )
+        ]
+
+        let detection = mapper.map(locatedCandidates: input, page: 0, rows: 6, columns: 4)
+        let maps = detection.apps.filter { $0.appName.lowercased() == "maps" }
+
+        XCTAssertEqual(maps.count, 1)
+        XCTAssertGreaterThanOrEqual(maps[0].slot.row, 2)
+        XCTAssertFalse(detection.widgetLockedSlots.isEmpty)
+    }
+
     func testMapKeepsSingleWordLabelsWithShortBoundingHeight() {
         let mapper = HomeScreenGridMapper()
         let input = [

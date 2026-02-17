@@ -3,6 +3,45 @@ import Ingestion
 import SwiftUI
 import UIKit
 
+@MainActor
+private enum MappingImageCache {
+    private static let dataCache = NSCache<NSString, UIImage>()
+    private static let fileCache = NSCache<NSString, UIImage>()
+
+    static func image(from data: Data) -> UIImage? {
+        let key = dataKey(for: data) as NSString
+        if let cached = dataCache.object(forKey: key) {
+            return cached
+        }
+        guard let image = UIImage(data: data) else {
+            return nil
+        }
+        dataCache.setObject(image, forKey: key)
+        return image
+    }
+
+    static func image(contentsOfFile path: String) -> UIImage? {
+        let key = path as NSString
+        if let cached = fileCache.object(forKey: key) {
+            return cached
+        }
+        guard let image = UIImage(contentsOfFile: path) else {
+            return nil
+        }
+        fileCache.setObject(image, forKey: key)
+        return image
+    }
+
+    private static func dataKey(for data: Data) -> String {
+        var hasher = Hasher()
+        hasher.combine(data.count)
+        for byte in data.prefix(128) {
+            hasher.combine(byte)
+        }
+        return String(hasher.finalize())
+    }
+}
+
 struct MappingGridGeometry {
     let rows: Int
     let columns: Int
@@ -169,7 +208,7 @@ struct MappingOverlayEditorView: View {
         guard let page = sortedPages.first(where: { $0.pageIndex == selectedPage }) else {
             return nil
         }
-        return UIImage(contentsOfFile: page.filePath)
+        return MappingImageCache.image(contentsOfFile: page.filePath)
     }
 
     private var indicesOnSelectedPage: [Int] {
@@ -743,7 +782,7 @@ struct MappingOverlayEditorView: View {
     private func detectedIconPreview(for detected: DetectedAppSlot) -> some View {
         Group {
             if let data = model.detectedIconPreviewDataBySlot[detected.slot],
-               let image = UIImage(data: data) {
+               let image = MappingImageCache.image(from: data) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()

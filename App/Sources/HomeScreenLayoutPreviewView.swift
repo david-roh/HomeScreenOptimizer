@@ -2,6 +2,45 @@ import Core
 import SwiftUI
 import UIKit
 
+@MainActor
+private enum PreviewImageCache {
+    private static let dataCache = NSCache<NSString, UIImage>()
+    private static let fileCache = NSCache<NSString, UIImage>()
+
+    static func image(from data: Data) -> UIImage? {
+        let key = dataKey(for: data) as NSString
+        if let cached = dataCache.object(forKey: key) {
+            return cached
+        }
+        guard let image = UIImage(data: data) else {
+            return nil
+        }
+        dataCache.setObject(image, forKey: key)
+        return image
+    }
+
+    static func image(contentsOfFile path: String) -> UIImage? {
+        let key = path as NSString
+        if let cached = fileCache.object(forKey: key) {
+            return cached
+        }
+        guard let image = UIImage(contentsOfFile: path) else {
+            return nil
+        }
+        fileCache.setObject(image, forKey: key)
+        return image
+    }
+
+    private static func dataKey(for data: Data) -> String {
+        var hasher = Hasher()
+        hasher.combine(data.count)
+        for byte in data.prefix(128) {
+            hasher.combine(byte)
+        }
+        return String(hasher.finalize())
+    }
+}
+
 struct HomeScreenLayoutPreviewView: View {
     @ObservedObject var model: RootViewModel
 
@@ -61,7 +100,7 @@ struct HomeScreenLayoutPreviewView: View {
         guard let page = model.importSession?.pages.first(where: { $0.pageIndex == selectedPage }) else {
             return nil
         }
-        return UIImage(contentsOfFile: page.filePath)
+        return PreviewImageCache.image(contentsOfFile: page.filePath)
     }
 
     private var suggestedDockAppIDs: [UUID] {
@@ -397,7 +436,7 @@ private struct PhoneLayoutCanvas: View {
     @ViewBuilder
     private func iconView(for appID: UUID) -> some View {
         if let data = iconData(appID),
-           let image = UIImage(data: data) {
+           let image = PreviewImageCache.image(from: data) {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
@@ -489,7 +528,7 @@ private struct TransitionLayoutCanvas: View {
     @ViewBuilder
     private func icon(appID: UUID) -> some View {
         if let data = iconData(appID),
-           let image = UIImage(data: data) {
+           let image = PreviewImageCache.image(from: data) {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
