@@ -215,7 +215,10 @@ public struct HomeScreenGridMapper: Sendable {
 
         if candidate.boxWidth > 0, candidate.boxHeight > 0 {
             let aspect = candidate.boxWidth / max(candidate.boxHeight, 0.0001)
-            if aspect > 7.5 {
+            if aspect > 13.5 {
+                return false
+            }
+            if aspect > 11.5, candidate.boxWidth > 0.16 {
                 return false
             }
         }
@@ -243,10 +246,12 @@ public struct HomeScreenGridMapper: Sendable {
     ) -> Set<Slot> {
         var locked: Set<Slot> = []
         let appGridHeight = max(appGridBottomY - appGridTopY, 0.0001)
+        let cellHeight = appGridHeight / Double(rows)
         let ignoredWeekdays: Set<String> = [
             "sun", "mon", "tue", "wed", "thu", "fri", "sat",
             "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"
         ]
+        var topWidgetSignals: [LocatedOCRLabelCandidate] = []
 
         for candidate in candidates {
             let lowered = candidate.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -272,6 +277,9 @@ public struct HomeScreenGridMapper: Sendable {
             }
             guard largeLabel || phraseLabel || strongCalendarSignal else {
                 continue
+            }
+            if strongCalendarSignal || (largeLabel && yFromTop <= appGridTopY + (cellHeight * 2.4)) {
+                topWidgetSignals.append(candidate)
             }
 
             guard let anchorRow = mappedAppRow(for: yFromTop, rows: rows) else {
@@ -327,7 +335,63 @@ public struct HomeScreenGridMapper: Sendable {
             }
         }
 
+        if shouldLockTopTwoRowsAcrossColumns(from: topWidgetSignals, rows: rows, columns: columns) {
+            let lockRows = min(2, rows)
+            for row in 0..<lockRows {
+                for column in 0..<columns {
+                    locked.insert(Slot(page: page, row: row, column: column, type: .app))
+                }
+            }
+        }
+
         return locked
+    }
+
+    private func shouldLockTopTwoRowsAcrossColumns(
+        from signals: [LocatedOCRLabelCandidate],
+        rows: Int,
+        columns: Int
+    ) -> Bool {
+        guard rows >= 2, columns > 0 else {
+            return false
+        }
+
+        let topRowsLimit = appGridTopY + ((appGridBottomY - appGridTopY) * 0.43)
+        let topSignals = signals.filter { candidate in
+            let yFromTop = 1.0 - min(max(candidate.centerY, 0), 1)
+            return yFromTop >= appGridTopY - 0.01 && yFromTop <= topRowsLimit
+        }
+        guard topSignals.count >= 2 else {
+            return false
+        }
+
+        let minX = topSignals.map(\.centerX).min() ?? 0
+        let maxX = topSignals.map(\.centerX).max() ?? 0
+        let spread = maxX - minX
+        let strongWideSignals = topSignals.filter { candidate in
+            let key = candidate.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return candidate.boxWidth >= 0.28
+                || key.contains("no events")
+                || key.contains("today")
+                || key.contains("weather")
+        }
+
+        if strongWideSignals.count >= 2, spread >= 0.33 {
+            return true
+        }
+        if spread >= 0.58 {
+            return true
+        }
+        if strongWideSignals.count >= 1, spread >= 0.48 {
+            return true
+        }
+        if strongWideSignals.count >= 1,
+           topSignals.count >= 3,
+           spread >= 0.42 {
+            return true
+        }
+
+        return false
     }
 
     private func resolveLikelyWidgetDuplicates(

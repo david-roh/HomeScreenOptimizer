@@ -81,18 +81,13 @@ public struct VisionLayoutOCRExtractor: LayoutOCRExtracting, LayoutOCRLocating {
               let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
             throw OCRExtractionError.failedToLoadImage
         }
+        let ocrImage = upscaledForOCRIfNeeded(image)
 
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false
-        request.minimumTextHeight = 0.015
-
-        let handler = VNImageRequestHandler(cgImage: image, options: [:])
-        try handler.perform([request])
+        let observations = try recognizeTextObservations(in: ocrImage)
 
         var bestByTextClusters: [String: [LocatedOCRLabelCandidate]] = [:]
 
-        for observation in request.results ?? [] {
+        for observation in observations {
             guard let top = observation.topCandidates(1).first else {
                 continue
             }
@@ -151,6 +146,78 @@ public struct VisionLayoutOCRExtractor: LayoutOCRExtracting, LayoutOCRLocating {
         let dy = lhs.centerY - rhs.centerY
         let distance = sqrt((dx * dx) + (dy * dy))
         return distance <= 0.08
+    }
+
+    private func recognizeTextObservations(in image: CGImage) throws -> [VNRecognizedTextObservation] {
+        var merged: [VNRecognizedTextObservation] = []
+        merged.append(contentsOf: try performTextRecognition(in: image, level: .accurate, minimumTextHeight: 0.006))
+        merged.append(contentsOf: try performTextRecognition(in: image, level: .fast, minimumTextHeight: 0.004))
+        return merged
+    }
+
+    private func performTextRecognition(
+        in image: CGImage,
+        level: VNRequestTextRecognitionLevel,
+        minimumTextHeight: Float
+    ) throws -> [VNRecognizedTextObservation] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = level
+        request.usesLanguageCorrection = true
+        request.recognitionLanguages = ["en_US"]
+        request.customWords = commonAppVocabulary
+        request.minimumTextHeight = minimumTextHeight
+
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        try handler.perform([request])
+        return request.results ?? []
+    }
+
+    private var commonAppVocabulary: [String] {
+        [
+            "Safari", "Messages", "Phone", "Mail", "Maps", "Calendar", "Photos", "Files", "Watch",
+            "Fitness", "Contacts", "Preview", "Utilities", "News", "Health", "Wallet", "Settings",
+            "Camera", "Reminders", "Music", "Weather", "Clock", "Notes", "FaceTime", "App Store",
+            "Home", "Podcasts", "Stocks", "Translate", "Shortcuts", "Voice Memos", "Freeform"
+        ]
+    }
+
+    private func upscaledForOCRIfNeeded(_ image: CGImage) -> CGImage {
+        let targetWidth = 1080.0
+        let currentWidth = Double(image.width)
+        guard currentWidth > 0 else {
+            return image
+        }
+
+        let scale = min(3.0, max(1.0, targetWidth / currentWidth))
+        guard scale > 1.01 else {
+            return image
+        }
+
+        let width = Int(round(Double(image.width) * scale))
+        let height = Int(round(Double(image.height) * scale))
+        guard width > image.width, height > image.height else {
+            return image
+        }
+
+        let colorSpace = image.colorSpace ?? CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = image.bitmapInfo.rawValue & CGBitmapInfo.alphaInfoMask.rawValue
+        let alphaInfo = bitmapInfo != 0 ? CGBitmapInfo(rawValue: bitmapInfo) : CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: image.bitsPerComponent,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: alphaInfo.rawValue
+        ) else {
+            return image
+        }
+
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage() ?? image
     }
     #endif
 }

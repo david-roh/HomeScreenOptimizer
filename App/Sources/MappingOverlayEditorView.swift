@@ -294,11 +294,11 @@ struct MappingOverlayEditorView: View {
             }
             .onAppear {
                 selectedPage = pageIndices.first ?? 0
-                selectedAppIndex = indicesOnSelectedPage.first
+                selectedAppIndex = nil
             }
             .onChange(of: selectedPage) { _, _ in
                 if let selectedAppIndex, !indicesOnSelectedPage.contains(selectedAppIndex) {
-                    self.selectedAppIndex = indicesOnSelectedPage.first
+                    self.selectedAppIndex = nil
                 }
             }
         }

@@ -206,4 +206,66 @@ final class LayoutGridMapperTests: XCTestCase {
 
         XCTAssertTrue(expected.isSubset(of: Set(detection.widgetLockedSlots)))
     }
+
+    func testMapLocksTopRowsWhenDualWidgetSignalsSpanScreenWidth() {
+        let mapper = HomeScreenGridMapper()
+        let input = [
+            LocatedOCRLabelCandidate(
+                text: "No Events Today",
+                confidence: 0.98,
+                centerX: 0.24,
+                centerY: 0.84,
+                boxWidth: 0.34,
+                boxHeight: 0.10
+            ),
+            LocatedOCRLabelCandidate(
+                text: "SUN",
+                confidence: 0.92,
+                centerX: 0.74,
+                centerY: 0.84,
+                boxWidth: 0.18,
+                boxHeight: 0.07
+            )
+        ]
+
+        let detection = mapper.map(locatedCandidates: input, page: 0, rows: 6, columns: 4)
+        let locked = Set(detection.widgetLockedSlots)
+
+        for row in 0..<2 {
+            for column in 0..<4 {
+                XCTAssertTrue(
+                    locked.contains(Slot(page: 0, row: row, column: column, type: .widgetLocked)),
+                    "Expected widget lock at row \(row) column \(column)"
+                )
+            }
+        }
+    }
+
+    func testMapKeepsSingleWordLabelsWithShortBoundingHeight() {
+        let mapper = HomeScreenGridMapper()
+        let input = [
+            LocatedOCRLabelCandidate(
+                text: "Fitness",
+                confidence: 0.97,
+                centerX: 0.15,
+                centerY: 0.81,
+                boxWidth: 0.104,
+                boxHeight: 0.013
+            ),
+            LocatedOCRLabelCandidate(
+                text: "Contacts",
+                confidence: 0.97,
+                centerX: 0.61,
+                centerY: 0.81,
+                boxWidth: 0.132,
+                boxHeight: 0.013
+            )
+        ]
+
+        let detection = mapper.map(locatedCandidates: input, page: 0, rows: 6, columns: 4)
+        let names = Set(detection.apps.map(\.appName))
+
+        XCTAssertTrue(names.contains("Fitness"))
+        XCTAssertTrue(names.contains("Contacts"))
+    }
 }

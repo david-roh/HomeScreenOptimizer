@@ -8,6 +8,7 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 if let analyzeIndex = arguments.firstIndex(of: "--analyze-screenshot"),
    arguments.indices.contains(analyzeIndex + 1) {
     let screenshotPath = arguments[analyzeIndex + 1]
+    let verbose = arguments.contains("--verbose")
     let mapper = HomeScreenGridMapper()
     let extractor = VisionLayoutOCRExtractor()
 
@@ -15,6 +16,16 @@ if let analyzeIndex = arguments.firstIndex(of: "--analyze-screenshot"),
         let located = try await extractor.extractLocatedAppLabels(from: screenshotPath)
         let detection = mapper.map(locatedCandidates: located, page: 0, rows: 6, columns: 4)
         print("Detected labels: \(located.count)")
+        if verbose {
+            print("Raw labels:")
+            for candidate in located.sorted(by: { $0.confidence > $1.confidence }) {
+                let x = String(format: "%.3f", candidate.centerX)
+                let y = String(format: "%.3f", candidate.centerY)
+                let w = String(format: "%.3f", candidate.boxWidth)
+                let h = String(format: "%.3f", candidate.boxHeight)
+                print("- \(candidate.text) conf=\(String(format: "%.2f", candidate.confidence)) x=\(x) y=\(y) w=\(w) h=\(h)")
+            }
+        }
         print("Mapped apps: \(detection.apps.count)")
         print("Widget locked slots: \(detection.widgetLockedSlots.count)")
         for app in detection.apps {

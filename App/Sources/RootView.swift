@@ -217,9 +217,6 @@ struct RootView: View {
             .animation(.easeInOut(duration: 0.22), value: selectedTab)
         }
         .background(stageBackground(for: selectedTab).ignoresSafeArea())
-        .sheet(isPresented: $showTuneSheet) {
-            tuneSheet
-        }
         .sheet(isPresented: $showQuickStart) {
             quickStartSheet
         }
@@ -234,6 +231,13 @@ struct RootView: View {
         }
         .sheet(isPresented: $showFinalLayoutPreview) {
             HomeScreenLayoutPreviewView(model: model)
+        }
+        .overlay {
+            if showTuneSheet {
+                fineTuneOverlay
+                    .transition(.opacity)
+                    .zIndex(5)
+            }
         }
         .onAppear {
             model.loadProfiles()
@@ -328,7 +332,7 @@ struct RootView: View {
             VStack(alignment: .leading, spacing: 12) {
                 stageHeader(for: tab)
 
-                if !model.statusMessage.isEmpty, !(tab == .setup && model.statusLevel == .info) {
+                if shouldShowStatusBanner(on: tab) {
                     statusBanner
                 }
 
@@ -346,6 +350,18 @@ struct RootView: View {
         .safeAreaInset(edge: .bottom) {
             reachableActionRail(for: tab)
         }
+    }
+
+    private func shouldShowStatusBanner(on tab: Tab) -> Bool {
+        guard !model.statusMessage.isEmpty else {
+            return false
+        }
+
+        if tab == .setup {
+            return model.statusLevel == .error
+        }
+
+        return true
     }
 
     private func stageHeader(for tab: Tab) -> some View {
@@ -624,7 +640,9 @@ struct RootView: View {
             HStack {
                 Button("Fine Tune") {
                     fineTuneMode = .weights
-                    showTuneSheet = true
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showTuneSheet = true
+                    }
                 }
                 .buttonStyle(.bordered)
 
@@ -1082,14 +1100,48 @@ struct RootView: View {
         }
     }
 
+    private var fineTuneOverlay: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                Color.black.opacity(0.22)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showTuneSheet = false
+                        }
+                    }
+
+                tuneSheet
+                    .frame(maxWidth: .infinity)
+                    .frame(height: min(max(360, proxy.size.height * 0.52), 430))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(Color.white.opacity(0.38), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .ignoresSafeArea()
+    }
+
     private var tuneSheet: some View {
         VStack(spacing: 12) {
+            Capsule()
+                .fill(Color.secondary.opacity(0.35))
+                .frame(width: 38, height: 5)
+                .padding(.top, 8)
+
             HStack {
                 Text("Fine Tune")
                     .font(.system(.title, design: .rounded).weight(.bold))
                 Spacer()
                 Button("Done") {
-                    showTuneSheet = false
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showTuneSheet = false
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Tab.setup.accent)
@@ -1103,7 +1155,7 @@ struct RootView: View {
             .pickerStyle(.segmented)
 
             if fineTuneMode == .weights {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     weightRow(
                         title: "Utility",
                         detail: "",
@@ -1135,7 +1187,7 @@ struct RootView: View {
                         .fill(Color(.secondarySystemBackground))
                 )
             } else {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text(model.calibrationCurrentTarget == nil ? "No active session" : "Tap highlighted target")
                             .font(.subheadline.weight(.semibold))
@@ -1173,10 +1225,8 @@ struct RootView: View {
 
             Spacer(minLength: 0)
         }
-        .padding(16)
-        .presentationDetents([.fraction(0.52), .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(.thinMaterial)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 12)
         .onDisappear {
             syncPresetFromModelWeights()
         }
@@ -2979,6 +3029,7 @@ final class RootViewModel: ObservableObject {
                 pages: pages,
                 locatedCandidatesByPage: locatedCandidatesByPage
             )
+            removeLikelyWidgetNoiseCandidates()
             purgeDockPlaceholders()
             reconcileWidgetLocksWithApps()
             detectedIconPreviewDataBySlot = buildDetectedIconPreviewMap(from: pages, slots: detectedSlots)
@@ -3666,7 +3717,9 @@ final class RootViewModel: ObservableObject {
 
                 var candidateName: String?
                 var hasLabelEvidence = false
+                var inferredFromLabel = false
                 let topRowsLikelyWidgets = topRowsLikelyWidgetByPage[slot.page] ?? false
+                let isTopWidgetZone = slot.type == .app && slot.row <= 1 && topRowsLikelyWidgets
 
                 if slot.type == .app,
                    let locatedHint = bestSlotLabelHint(
@@ -3678,6 +3731,7 @@ final class RootViewModel: ObservableObject {
                    ) {
                     candidateName = locatedHint
                     hasLabelEvidence = true
+                    inferredFromLabel = true
                 }
 
                 if candidateName == nil, slot.type == .app {
@@ -3689,11 +3743,16 @@ final class RootViewModel: ObservableObject {
                     )
                     if candidateName != nil {
                         hasLabelEvidence = true
+                        inferredFromLabel = true
                     }
                 }
 
+                if isTopWidgetZone, !inferredFromLabel {
+                    continue
+                }
+
                 if candidateName == nil, slot.type == .app {
-                    let canUseIconClassifier = slot.row >= 2 || hasLabelEvidence || !topRowsLikelyWidgets
+                    let canUseIconClassifier = !isTopWidgetZone && (slot.row >= 2 || hasLabelEvidence || !topRowsLikelyWidgets)
                     if canUseIconClassifier {
                         let minimumConfidence = slot.row <= 1 ? 0.34 : 0.18
                         candidateName = classifyAppIconHint(
@@ -3717,12 +3776,15 @@ final class RootViewModel: ObservableObject {
 
                 if candidateName == nil,
                    !usageSuggestions.isEmpty,
-                   (slot.type != .app || slot.row >= 2 || !topRowsLikelyWidgets) {
+                   (slot.type != .app || !isTopWidgetZone) {
                     candidateName = usageSuggestions.removeFirst()
                 }
 
                 if candidateName == nil {
                     if slot.type == .dock {
+                        continue
+                    }
+                    if isTopWidgetZone {
                         continue
                     }
                     let lowConfidenceTopRow = slot.row <= 1 && entry.score < 0.48
@@ -4118,12 +4180,15 @@ final class RootViewModel: ObservableObject {
               let crop = image.cropping(to: cropRect) else {
             return nil
         }
+        let ocrCrop = upscaledOCRCrop(crop, minimumTargetWidth: 360)
 
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
-        request.minimumTextHeight = 0.14
-        let handler = VNImageRequestHandler(cgImage: crop, options: [:])
+        request.minimumTextHeight = 0.06
+        request.recognitionLanguages = ["en_US"]
+        request.customWords = ocrCustomWords
+        let handler = VNImageRequestHandler(cgImage: ocrCrop, options: [:])
 
         do {
             try handler.perform([request])
@@ -4149,6 +4214,44 @@ final class RootViewModel: ObservableObject {
         _ = columns
         return nil
 #endif
+    }
+
+    private var ocrCustomWords: [String] {
+        [
+            "Safari", "Messages", "Phone", "Mail", "Maps", "Calendar", "Photos", "Files", "Watch",
+            "Fitness", "Contacts", "Preview", "Utilities", "News", "Health", "Wallet", "Settings",
+            "Camera", "Reminders", "Music", "Weather", "Clock", "Notes", "FaceTime", "App Store"
+        ]
+    }
+
+    private func upscaledOCRCrop(_ crop: CGImage, minimumTargetWidth: Int) -> CGImage {
+        let targetWidth = max(minimumTargetWidth, crop.width)
+        guard crop.width > 0, crop.height > 0, targetWidth > crop.width else {
+            return crop
+        }
+
+        let scale = min(3.0, Double(targetWidth) / Double(crop.width))
+        let width = Int(round(Double(crop.width) * scale))
+        let height = Int(round(Double(crop.height) * scale))
+        guard width > crop.width, height > crop.height else {
+            return crop
+        }
+
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else {
+            return crop
+        }
+
+        context.interpolationQuality = .high
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage() ?? crop
     }
 
     private func classifyDockIconHint(
