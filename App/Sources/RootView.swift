@@ -16,6 +16,9 @@ import Simulation
 import SwiftUI
 import UIKit
 import Usage
+#if canImport(Vision)
+import Vision
+#endif
 
 enum VisualPatternMode: String, CaseIterable, Codable, Sendable, Identifiable {
     case colorBands
@@ -1058,9 +1061,36 @@ struct RootView: View {
     }
 
     private var tuneSheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                LinearGradient(
+                    colors: [
+                        Color(.systemBackground),
+                        Tab.setup.backgroundTop.opacity(0.30)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+
+                VStack(spacing: 12) {
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.35))
+                        .frame(width: 44, height: 5)
+                        .padding(.top, 8)
+
+                    HStack {
+                        Text("Fine Tune")
+                            .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                        Spacer()
+                        Button("Done") {
+                            showTuneSheet = false
+                            syncPresetFromModelWeights()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Tab.setup.accent)
+                    }
+
                     Picker("Fine Tune", selection: $fineTuneMode) {
                         ForEach(FineTuneMode.allCases) { mode in
                             Text(mode.title).tag(mode)
@@ -1069,7 +1099,7 @@ struct RootView: View {
                     .pickerStyle(.segmented)
 
                     if fineTuneMode == .weights {
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 8) {
                             Text("Adjust tradeoffs quickly.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -1099,23 +1129,16 @@ struct RootView: View {
                                 accent: Tab.setup.accent
                             )
                         }
-                        .padding(14)
-                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(Color(.secondarySystemBackground))
+                        )
                     } else {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Tap Start, then tap only the highlighted target.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
+                        VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                if let target = model.calibrationCurrentTarget {
-                                    Text("Target: R\(target.row + 1) C\(target.column + 1)")
-                                        .font(.subheadline.weight(.semibold))
-                                } else {
-                                    Text("No active session")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                }
+                                Text(model.calibrationCurrentTarget == nil ? "No active session" : "Tap highlighted target")
+                                    .font(.subheadline.weight(.semibold))
                                 Spacer()
                                 Text(model.calibrationProgressLabel)
                                     .font(.caption.monospacedDigit())
@@ -1136,24 +1159,28 @@ struct RootView: View {
                                     .buttonStyle(.borderedProminent)
                                     .tint(model.calibrationButtonTint(row: coordinate.row, column: coordinate.column))
                                     .disabled(!model.calibrationInProgress)
+                                    .font(.caption.weight(.semibold))
                                 }
                             }
                         }
-                        .padding(14)
-                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(16)
-            }
-            .navigationTitle("Fine Tune")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        showTuneSheet = false
-                        syncPresetFromModelWeights()
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(Color(.secondarySystemBackground))
+                        )
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, max(14, proxy.safeAreaInsets.bottom))
+                .frame(maxWidth: .infinity)
+                .frame(height: max(420, proxy.size.height * 0.62))
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .stroke(Color.white.opacity(0.65), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: -5)
             }
         }
     }
@@ -1901,6 +1928,10 @@ final class RootViewModel: ObservableObject {
     private var appNamesByID: [UUID: String] = [:]
     private var originalDetectedSlots: [DetectedAppSlot] = []
     private var originalWidgetLockedSlots: [Slot] = []
+    private let appGridTopY = 0.15
+    private let appGridBottomY = 0.80
+    private let dockTopY = 0.84
+    private let dockBottomY = 0.98
 
     init(ocrExtractor: any LayoutOCRExtracting = VisionLayoutOCRExtractor()) {
         self.ocrExtractor = ocrExtractor
@@ -2889,6 +2920,7 @@ final class RootViewModel: ObservableObject {
             var mergedCandidates: [OCRLabelCandidate] = []
             var mergedDetectedSlots: [DetectedAppSlot] = []
             var mergedWidgetLockedSlots: [Slot] = []
+            var locatedCandidatesByPage: [Int: [LocatedOCRLabelCandidate]] = [:]
             let locatingExtractor = ocrExtractor as? any LayoutOCRLocating
 
             for page in pages {
@@ -2897,6 +2929,7 @@ final class RootViewModel: ObservableObject {
 
                 if let locatingExtractor {
                     let located = try await locatingExtractor.extractLocatedAppLabels(from: page.filePath)
+                    locatedCandidatesByPage[page.pageIndex] = located
                     let mapped = gridMapper.map(locatedCandidates: located, page: page.pageIndex)
                     mergedDetectedSlots.append(contentsOf: mapped.apps)
                     mergedWidgetLockedSlots.append(contentsOf: mapped.widgetLockedSlots)
@@ -2918,7 +2951,11 @@ final class RootViewModel: ObservableObject {
                     if lhs.row != rhs.row { return lhs.row < rhs.row }
                     return lhs.column < rhs.column
                 }
-            let inferredMissingCount = inferMissingSlotsFromIconOccupancy(pages: pages)
+            removeLikelyWidgetNoiseCandidates()
+            let inferredMissingCount = inferMissingSlotsFromIconOccupancy(
+                pages: pages,
+                locatedCandidatesByPage: locatedCandidatesByPage
+            )
             detectedIconPreviewDataBySlot = buildDetectedIconPreviewMap(from: pages, slots: detectedSlots)
             originalDetectedSlots = detectedSlots
             originalWidgetLockedSlots = widgetLockedSlots
@@ -3526,11 +3563,44 @@ final class RootViewModel: ObservableObject {
 
     private func inferMissingSlotsFromIconOccupancy(
         pages: [ScreenshotPage],
+        locatedCandidatesByPage: [Int: [LocatedOCRLabelCandidate]],
         rows: Int = 6,
         columns: Int = 4
     ) -> Int {
         guard rows > 0, columns > 0, !pages.isEmpty else {
             return 0
+        }
+
+        var pageImages: [Int: CGImage] = [:]
+        for page in pages.sorted(by: { $0.pageIndex < $1.pageIndex }) {
+            guard let image = UIImage(contentsOfFile: page.filePath)?.cgImage else {
+                continue
+            }
+            pageImages[page.pageIndex] = image
+        }
+
+        var inferredWidgetLocks: Set<Slot> = []
+        for page in pages {
+            guard let cgImage = pageImages[page.pageIndex] else {
+                continue
+            }
+            inferredWidgetLocks.formUnion(
+                detectLikelyWidgetLocks(
+                    in: cgImage,
+                    page: page.pageIndex,
+                    rows: rows,
+                    columns: columns
+                )
+            )
+        }
+        if !inferredWidgetLocks.isEmpty {
+            widgetLockedSlots = Array(Set(widgetLockedSlots).union(inferredWidgetLocks))
+                .sorted { lhs, rhs in
+                    if lhs.page != rhs.page { return lhs.page < rhs.page }
+                    if lhs.row != rhs.row { return lhs.row < rhs.row }
+                    return lhs.column < rhs.column
+                }
+            removeLikelyWidgetNoiseCandidates()
         }
 
         var occupiedSlotIDs = Set(detectedSlots.map { slotIdentity($0.slot) })
@@ -3544,18 +3614,20 @@ final class RootViewModel: ObservableObject {
             .filter { !canonicalNames.contains(canonicalAppName($0)) }
         var inferredCount = 0
         var unlabeledCounter = 1
+        var usedLocatedLabelIDs: Set<String> = []
 
         for page in pages.sorted(by: { $0.pageIndex < $1.pageIndex }) {
-            guard let image = UIImage(contentsOfFile: page.filePath) else {
+            guard let cgImage = pageImages[page.pageIndex] else {
                 continue
             }
 
             let occupancy = likelyOccupiedSlots(
-                in: image,
+                in: UIImage(cgImage: cgImage),
                 page: page.pageIndex,
                 rows: rows,
                 columns: columns
             )
+            let located = locatedCandidatesByPage[page.pageIndex] ?? []
 
             for entry in occupancy {
                 let slot = entry.slot
@@ -3566,18 +3638,51 @@ final class RootViewModel: ObservableObject {
                     continue
                 }
 
-                let candidateName: String
-                if !usageSuggestions.isEmpty {
-                    candidateName = usageSuggestions.removeFirst()
-                } else if slot.type == .dock {
-                    candidateName = "Dock App \(unlabeledCounter)"
-                    unlabeledCounter += 1
-                } else {
-                    candidateName = "Unlabeled App \(unlabeledCounter)"
-                    unlabeledCounter += 1
+                var candidateName: String?
+
+                if slot.type == .app,
+                   let locatedHint = bestSlotLabelHint(
+                       for: slot,
+                       from: located,
+                       rows: rows,
+                       columns: columns,
+                       usedLabelIDs: &usedLocatedLabelIDs
+                   ) {
+                    candidateName = locatedHint
                 }
 
-                let normalizedName = normalizeDetectedAppName(candidateName)
+                if candidateName == nil, slot.type == .app {
+                    candidateName = recognizeSlotLabelHint(
+                        for: slot,
+                        in: cgImage,
+                        rows: rows,
+                        columns: columns
+                    )
+                }
+
+                if candidateName == nil, slot.type == .dock {
+                    candidateName = classifyDockIconHint(
+                        for: slot,
+                        in: cgImage,
+                        rows: rows,
+                        columns: columns
+                    )
+                }
+
+                if candidateName == nil, !usageSuggestions.isEmpty {
+                    candidateName = usageSuggestions.removeFirst()
+                }
+
+                if candidateName == nil {
+                    if slot.type == .dock {
+                        candidateName = "Dock Slot \(slot.column + 1)"
+                    } else {
+                        candidateName = "Unlabeled \(unlabeledCounter)"
+                        unlabeledCounter += 1
+                    }
+                }
+
+                let normalizedName = normalizeDetectedAppName(candidateName ?? "")
                 let canonical = canonicalAppName(normalizedName)
                 if !canonical.isEmpty, canonicalNames.contains(canonical) {
                     continue
@@ -3602,6 +3707,353 @@ final class RootViewModel: ObservableObject {
             sortDetectedSlots()
         }
         return inferredCount
+    }
+
+    private func removeLikelyWidgetNoiseCandidates() {
+        let lowerGridNames = Set(
+            detectedSlots
+                .filter { $0.slot.type == .app && $0.slot.row >= 2 }
+                .map { canonicalAppName($0.appName) }
+                .filter { !$0.isEmpty }
+        )
+
+        detectedSlots.removeAll { detected in
+            guard detected.slot.type == .app else {
+                return false
+            }
+            let canonical = canonicalAppName(detected.appName)
+            if canonical.isEmpty {
+                return false
+            }
+            if isLikelyWidgetNoiseName(canonical) {
+                return true
+            }
+            if lowerGridNames.contains(canonical), detected.slot.row <= 1 {
+                return true
+            }
+            if isWidgetLocked(detected.slot), detected.confidence < 0.95 {
+                return true
+            }
+            return false
+        }
+        sortDetectedSlots()
+    }
+
+    private func isLikelyWidgetNoiseName(_ canonicalName: String) -> Bool {
+        let key = canonicalName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            return true
+        }
+
+        let exactNoise: Set<String> = [
+            "sun", "mon", "tue", "wed", "thu", "fri", "sat",
+            "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+            "today", "tomorrow", "yesterday", "no events", "no events today", "search", "widget"
+        ]
+        if exactNoise.contains(key) {
+            return true
+        }
+        if key.range(of: #"^\d{1,2}$"#, options: .regularExpression) != nil {
+            return true
+        }
+        let fragments = [
+            "weather", "calendar widget", "batteries", "screen time", "reminders due", "event"
+        ]
+        return fragments.contains(where: { key.contains($0) })
+    }
+
+    private func detectLikelyWidgetLocks(
+        in image: CGImage,
+        page: Int,
+        rows: Int,
+        columns: Int
+    ) -> Set<Slot> {
+#if canImport(Vision)
+        guard rows > 0, columns > 0 else {
+            return []
+        }
+
+        let request = VNDetectRectanglesRequest()
+        request.maximumObservations = 32
+        request.minimumSize = 0.08
+        request.minimumAspectRatio = 0.45
+        request.maximumAspectRatio = 2.30
+        request.minimumConfidence = 0.45
+        request.quadratureTolerance = 24.0
+
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        do {
+            try handler.perform([request])
+        } catch {
+            return []
+        }
+
+        let gridHeight = max(appGridBottomY - appGridTopY, 0.0001)
+        let cellWidth = 1.0 / Double(columns)
+        let cellHeight = gridHeight / Double(rows)
+        let minimumWidgetArea = cellWidth * cellHeight * 1.9
+
+        var locked: Set<Slot> = []
+        for observation in request.results ?? [] {
+            let rect = observation.boundingBox
+            let normalizedTopRect = CGRect(
+                x: rect.minX,
+                y: 1.0 - rect.maxY,
+                width: rect.width,
+                height: rect.height
+            )
+
+            if normalizedTopRect.maxY > appGridBottomY + 0.02 {
+                continue
+            }
+            if normalizedTopRect.minY < appGridTopY - 0.05 {
+                continue
+            }
+            if Double(normalizedTopRect.width * normalizedTopRect.height) < minimumWidgetArea {
+                continue
+            }
+            if normalizedTopRect.width < CGFloat(cellWidth * 1.35) || normalizedTopRect.height < CGFloat(cellHeight * 1.35) {
+                continue
+            }
+
+            for row in 0..<rows {
+                for column in 0..<columns {
+                    let cellRect = CGRect(
+                        x: Double(column) * cellWidth,
+                        y: appGridTopY + (Double(row) * cellHeight),
+                        width: cellWidth,
+                        height: cellHeight
+                    )
+                    let overlap = cellRect.intersection(normalizedTopRect)
+                    guard !overlap.isNull else {
+                        continue
+                    }
+                    let overlapRatio = (overlap.width * overlap.height) / (cellRect.width * cellRect.height)
+                    if overlapRatio >= 0.33 {
+                        locked.insert(Slot(page: page, row: row, column: column, type: .widgetLocked))
+                    }
+                }
+            }
+        }
+
+        return locked
+#else
+        _ = image
+        _ = page
+        _ = rows
+        _ = columns
+        return []
+#endif
+    }
+
+    private func bestSlotLabelHint(
+        for slot: Slot,
+        from candidates: [LocatedOCRLabelCandidate],
+        rows: Int,
+        columns: Int,
+        usedLabelIDs: inout Set<String>
+    ) -> String? {
+        guard slot.type == .app, rows > 0, columns > 0 else {
+            return nil
+        }
+
+        let gridHeight = max(appGridBottomY - appGridTopY, 0.0001)
+        let cellHeight = gridHeight / Double(rows)
+        let cellWidth = 1.0 / Double(columns)
+        let expectedCenterX = (Double(slot.column) + 0.5) * cellWidth
+        let expectedCenterYFromTop = appGridTopY + (Double(slot.row) * cellHeight) + (cellHeight * 0.82)
+
+        var bestText: String?
+        var bestScore = -Double.greatestFiniteMagnitude
+
+        for candidate in candidates {
+            let normalized = normalizeDetectedAppName(candidate.text)
+            let canonical = canonicalAppName(normalized)
+            if canonical.isEmpty || isLikelyWidgetNoiseName(canonical) {
+                continue
+            }
+
+            let labelID = locatedLabelID(candidate)
+            if usedLabelIDs.contains(labelID) {
+                continue
+            }
+
+            let yFromTop = 1.0 - min(max(candidate.centerY, 0), 1)
+            let x = min(max(candidate.centerX, 0), 1)
+            let deltaX = abs(x - expectedCenterX)
+            let deltaY = abs(yFromTop - expectedCenterYFromTop)
+            if deltaX > (cellWidth * 0.62) || deltaY > (cellHeight * 0.88) {
+                continue
+            }
+
+            let compactnessPenalty = max(0, (candidate.boxWidth - (cellWidth * 0.90))) * 2.4
+            let score = candidate.confidence - (deltaX * 1.25) - (deltaY * 2.2) - compactnessPenalty
+            if score > bestScore {
+                bestScore = score
+                bestText = normalized
+            }
+        }
+
+        guard let bestText, bestScore >= 0.17 else {
+            return nil
+        }
+        if let matched = candidates.first(where: { normalizeDetectedAppName($0.text) == bestText }) {
+            usedLabelIDs.insert(locatedLabelID(matched))
+        }
+        return bestText
+    }
+
+    private func locatedLabelID(_ candidate: LocatedOCRLabelCandidate) -> String {
+        "\(canonicalAppName(candidate.text))::\(String(format: "%.3f", candidate.centerX))::\(String(format: "%.3f", candidate.centerY))"
+    }
+
+    private func recognizeSlotLabelHint(
+        for slot: Slot,
+        in image: CGImage,
+        rows: Int,
+        columns: Int
+    ) -> String? {
+#if canImport(Vision)
+        guard slot.type == .app,
+              let labelRect = labelCropRectForSlot(
+                  slot: slot,
+                  imageWidth: CGFloat(image.width),
+                  imageHeight: CGFloat(image.height),
+                  rows: rows,
+                  columns: columns
+              ) else {
+            return nil
+        }
+
+        let imageBounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        let cropRect = labelRect.integral.intersection(imageBounds)
+        guard !cropRect.isNull, cropRect.width > 8, cropRect.height > 8,
+              let crop = image.cropping(to: cropRect) else {
+            return nil
+        }
+
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        request.minimumTextHeight = 0.22
+        let handler = VNImageRequestHandler(cgImage: crop, options: [:])
+
+        do {
+            try handler.perform([request])
+        } catch {
+            return nil
+        }
+
+        guard let top = request.results?.first?.topCandidates(1).first else {
+            return nil
+        }
+
+        let text = normalizeDetectedAppName(top.string.trimmingCharacters(in: .whitespacesAndNewlines))
+        let canonical = canonicalAppName(text)
+        guard !canonical.isEmpty, !isLikelyWidgetNoiseName(canonical), top.confidence >= 0.32 else {
+            return nil
+        }
+
+        return text
+#else
+        _ = slot
+        _ = image
+        _ = rows
+        _ = columns
+        return nil
+#endif
+    }
+
+    private func classifyDockIconHint(
+        for slot: Slot,
+        in image: CGImage,
+        rows: Int,
+        columns: Int
+    ) -> String? {
+#if canImport(Vision)
+        guard slot.type == .dock,
+              let iconRect = iconCropRectForSlot(
+                  slot: slot,
+                  imageWidth: CGFloat(image.width),
+                  imageHeight: CGFloat(image.height),
+                  rows: rows,
+                  columns: columns
+              ) else {
+            return nil
+        }
+
+        let imageBounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        let cropRect = iconRect.integral.intersection(imageBounds)
+        guard !cropRect.isNull, cropRect.width > 8, cropRect.height > 8,
+              let crop = image.cropping(to: cropRect) else {
+            return nil
+        }
+
+        let request = VNClassifyImageRequest()
+        let handler = VNImageRequestHandler(cgImage: crop, options: [:])
+        do {
+            try handler.perform([request])
+        } catch {
+            return nil
+        }
+
+        let mapping: [(needle: String, app: String)] = [
+            ("compass", "Safari"),
+            ("speech", "Messages"),
+            ("chat", "Messages"),
+            ("envelope", "Mail"),
+            ("phone", "Phone"),
+            ("telephone", "Phone"),
+            ("map", "Maps"),
+            ("camera", "Camera"),
+            ("wallet", "Wallet"),
+            ("music", "Music")
+        ]
+
+        for result in request.results?.prefix(8) ?? [] {
+            let key = result.identifier.lowercased()
+            guard result.confidence >= 0.16 else {
+                continue
+            }
+            if let match = mapping.first(where: { key.contains($0.needle) }) {
+                return match.app
+            }
+        }
+        return nil
+#else
+        _ = slot
+        _ = image
+        _ = rows
+        _ = columns
+        return nil
+#endif
+    }
+
+    private func labelCropRectForSlot(
+        slot: Slot,
+        imageWidth: CGFloat,
+        imageHeight: CGFloat,
+        rows: Int,
+        columns: Int
+    ) -> CGRect? {
+        guard slot.type == .app, rows > 0, columns > 0 else {
+            return nil
+        }
+
+        let appGridTop = imageHeight * appGridTopY
+        let appGridBottom = imageHeight * appGridBottomY
+        let appGridHeight = max(1, appGridBottom - appGridTop)
+        let cellWidth = imageWidth / CGFloat(columns)
+        let cellHeight = appGridHeight / CGFloat(rows)
+        let row = max(0, min(rows - 1, slot.row))
+        let col = max(0, min(columns - 1, slot.column))
+
+        return CGRect(
+            x: CGFloat(col) * cellWidth + (cellWidth * 0.06),
+            y: appGridTop + CGFloat(row) * cellHeight + (cellHeight * 0.62),
+            width: cellWidth * 0.88,
+            height: cellHeight * 0.28
+        )
     }
 
     private func likelyOccupiedSlots(
@@ -3653,13 +4105,13 @@ final class RootViewModel: ObservableObject {
 
         let appThreshold = occupancyThreshold(
             scores: appScores.map(\.score),
-            minimum: 0.225,
-            sigmaScale: 0.95
+            minimum: 0.195,
+            sigmaScale: 0.72
         )
         let dockThreshold = occupancyThreshold(
             scores: dockScores.map(\.score),
-            minimum: 0.210,
-            sigmaScale: 0.85
+            minimum: 0.185,
+            sigmaScale: 0.65
         )
 
         var selected = appScores
@@ -3931,15 +4383,16 @@ final class RootViewModel: ObservableObject {
             return nil
         }
 
-        let appGridTop = imageHeight * 0.15
-        let appGridBottom = imageHeight * 0.80
+        let appGridTop = imageHeight * appGridTopY
+        let appGridBottom = imageHeight * appGridBottomY
         let appGridHeight = max(1, appGridBottom - appGridTop)
         let appCellHeight = appGridHeight / CGFloat(rows)
         let appCellWidth = imageWidth / CGFloat(columns)
 
         if slot.type == .dock {
-            let dockTop = imageHeight * 0.84
-            let dockHeight = imageHeight * 0.12
+            let dockTop = imageHeight * dockTopY
+            let dockBottom = imageHeight * dockBottomY
+            let dockHeight = max(1, dockBottom - dockTop)
             let iconSide = min(appCellWidth * 0.70, dockHeight * 0.74)
             return CGRect(
                 x: CGFloat(slot.column) * appCellWidth + (appCellWidth - iconSide) / 2,
@@ -4032,8 +4485,8 @@ final class RootViewModel: ObservableObject {
             return assignments
         }
 
-        let dockSlots = assignments
-            .map(\.slot)
+        let assignmentSlots = assignments.map { $0.slot }
+        let dockSlots = assignmentSlots
             .filter { $0.type == .dock }
             .sorted { lhs, rhs in lhs.column < rhs.column }
         guard !dockSlots.isEmpty else {
