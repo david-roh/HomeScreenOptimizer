@@ -30,7 +30,8 @@ final class GuidedFlowSmokeTests: XCTestCase {
         XCTAssertTrue(customOption.waitForExistence(timeout: 3))
         customOption.tap()
 
-        XCTAssertTrue(app.textFields["Custom context label (e.g. Commute)"].waitForExistence(timeout: 3))
+        let customLabelField = app.textFields["Custom context label"]
+        XCTAssertTrue(customLabelField.waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["Speed"].exists)
     }
 

@@ -217,7 +217,7 @@ struct RootView: View {
             .animation(.easeInOut(duration: 0.22), value: selectedTab)
         }
         .background(stageBackground(for: selectedTab).ignoresSafeArea())
-        .fullScreenCover(isPresented: $showTuneSheet) {
+        .sheet(isPresented: $showTuneSheet) {
             tuneSheet
         }
         .sheet(isPresented: $showQuickStart) {
@@ -264,9 +264,6 @@ struct RootView: View {
             }
 
             model.applyContextBaseline(for: newContext)
-            if newContext == .custom {
-                showSetupAdvanced = true
-            }
             syncPresetFromModelWeights()
         }
         .onChange(of: model.selectedProfileID) { _, _ in
@@ -331,7 +328,7 @@ struct RootView: View {
             VStack(alignment: .leading, spacing: 12) {
                 stageHeader(for: tab)
 
-                if !model.statusMessage.isEmpty {
+                if !model.statusMessage.isEmpty, !(tab == .setup && model.statusLevel == .info) {
                     statusBanner
                 }
 
@@ -339,7 +336,7 @@ struct RootView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
 
                 Color.clear
-                    .frame(height: 92)
+                    .frame(height: 76)
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -524,6 +521,13 @@ struct RootView: View {
                 }
             }
 
+            if model.context == .custom {
+                TextField("Custom context label", text: $model.customContextLabel)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled()
+                    .textFieldStyle(.roundedBorder)
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Intent")
                     .font(.subheadline.weight(.semibold))
@@ -552,9 +556,6 @@ struct RootView: View {
                     }
                 }
 
-                Text(selectedPreset.shortDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             DisclosureGroup("More options", isExpanded: $showSetupAdvanced) {
@@ -562,13 +563,6 @@ struct RootView: View {
                     Text(contextBehaviorHint(for: model.context))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-
-                    if model.context == .custom {
-                        TextField("Custom context label (e.g. Commute)", text: $model.customContextLabel)
-                            .textInputAutocapitalization(.words)
-                            .autocorrectionDisabled()
-                            .textFieldStyle(.roundedBorder)
-                    }
 
                     if selectedPreset == .visualHarmony {
                         pickerRow(title: "Visual Pattern", icon: "paintpalette", selection: $selectedVisualPattern) {
@@ -1089,125 +1083,102 @@ struct RootView: View {
     }
 
     private var tuneSheet: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .bottom) {
-                Color.black.opacity(0.28)
-                    .ignoresSafeArea()
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        showTuneSheet = false
-                        syncPresetFromModelWeights()
-                    }
+        VStack(spacing: 12) {
+            HStack {
+                Text("Fine Tune")
+                    .font(.system(.title, design: .rounded).weight(.bold))
+                Spacer()
+                Button("Done") {
+                    showTuneSheet = false
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Tab.setup.accent)
+            }
 
-                VStack(spacing: 12) {
-                    Capsule()
-                        .fill(Color.secondary.opacity(0.35))
-                        .frame(width: 44, height: 5)
-                        .padding(.top, 8)
+            Picker("Fine Tune", selection: $fineTuneMode) {
+                ForEach(FineTuneMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
 
+            if fineTuneMode == .weights {
+                VStack(alignment: .leading, spacing: 10) {
+                    weightRow(
+                        title: "Utility",
+                        detail: "",
+                        value: utilityWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                    weightRow(
+                        title: "Flow",
+                        detail: "",
+                        value: flowWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                    weightRow(
+                        title: "Aesthetics",
+                        detail: "",
+                        value: aestheticsWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                    weightRow(
+                        title: "Move Cost",
+                        detail: "",
+                        value: moveCostWeightBinding,
+                        accent: Tab.setup.accent
+                    )
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
+                )
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("Fine Tune")
-                            .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                        Text(model.calibrationCurrentTarget == nil ? "No active session" : "Tap highlighted target")
+                            .font(.subheadline.weight(.semibold))
                         Spacer()
-                        Button("Done") {
-                            showTuneSheet = false
-                            syncPresetFromModelWeights()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Tab.setup.accent)
+                        Text(model.calibrationProgressLabel)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
                     }
 
-                    Picker("Fine Tune", selection: $fineTuneMode) {
-                        ForEach(FineTuneMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
+                    Button(model.calibrationInProgress ? "Restart Calibration" : "Start Calibration") {
+                        model.startCalibration()
                     }
-                    .pickerStyle(.segmented)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Tab.setup.accent)
 
-                    if fineTuneMode == .weights {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Adjust tradeoffs quickly.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            weightRow(
-                                title: "Utility",
-                                detail: "Boost frequent apps into easiest-reach slots.",
-                                value: utilityWeightBinding,
-                                accent: Tab.setup.accent
-                            )
-                            weightRow(
-                                title: "Flow",
-                                detail: "Keep common task sequences close together.",
-                                value: flowWeightBinding,
-                                accent: Tab.setup.accent
-                            )
-                            weightRow(
-                                title: "Aesthetics",
-                                detail: "Favor visual grouping and cleaner patterning.",
-                                value: aestheticsWeightBinding,
-                                accent: Tab.setup.accent
-                            )
-                            weightRow(
-                                title: "Move Cost",
-                                detail: "Reduce disruption from large rearrangements.",
-                                value: moveCostWeightBinding,
-                                accent: Tab.setup.accent
-                            )
-                        }
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Color(.secondarySystemBackground))
-                        )
-                    } else {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(model.calibrationCurrentTarget == nil ? "No active session" : "Tap highlighted target")
-                                    .font(.subheadline.weight(.semibold))
-                                Spacer()
-                                Text(model.calibrationProgressLabel)
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Button(model.calibrationInProgress ? "Restart Calibration" : "Start Calibration") {
-                                model.startCalibration()
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                        ForEach(calibrationCoordinates, id: \.id) { coordinate in
+                            Button("\(coordinate.row + 1),\(coordinate.column + 1)") {
+                                model.handleCalibrationTap(row: coordinate.row, column: coordinate.column)
                             }
                             .buttonStyle(.borderedProminent)
-                            .tint(Tab.setup.accent)
-
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                                ForEach(calibrationCoordinates, id: \.id) { coordinate in
-                                    Button("\(coordinate.row + 1),\(coordinate.column + 1)") {
-                                        model.handleCalibrationTap(row: coordinate.row, column: coordinate.column)
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .tint(model.calibrationButtonTint(row: coordinate.row, column: coordinate.column))
-                                    .disabled(!model.calibrationInProgress)
-                                    .font(.caption.weight(.semibold))
-                                }
-                            }
+                            .tint(model.calibrationButtonTint(row: coordinate.row, column: coordinate.column))
+                            .disabled(!model.calibrationInProgress)
+                            .font(.caption.weight(.semibold))
+                            .controlSize(.small)
                         }
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Color(.secondarySystemBackground))
-                        )
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, max(14, proxy.safeAreaInsets.bottom))
-                .frame(maxWidth: .infinity)
-                .frame(height: max(390, proxy.size.height * 0.58))
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .stroke(Color.white.opacity(0.65), lineWidth: 1)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
                 )
-                .shadow(color: Color.black.opacity(0.12), radius: 14, x: 0, y: -5)
             }
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .presentationDetents([.fraction(0.52), .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(.thinMaterial)
+        .onDisappear {
+            syncPresetFromModelWeights()
         }
     }
 
@@ -1469,9 +1440,11 @@ struct RootView: View {
             }
             Slider(value: value, in: 0...1)
                 .tint(accent)
-            Text(detail)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            if !detail.isEmpty {
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -3738,6 +3711,11 @@ final class RootViewModel: ObservableObject {
                     if slot.type == .dock {
                         continue
                     }
+                    let lowConfidenceTopRow = slot.row <= 1 && entry.score < 0.48
+                    let lowConfidenceAnyRow = entry.score < 0.24
+                    if lowConfidenceTopRow || lowConfidenceAnyRow {
+                        continue
+                    }
                     candidateName = "Unlabeled \(unlabeledCounter)"
                     unlabeledCounter += 1
                 }
@@ -3777,6 +3755,7 @@ final class RootViewModel: ObservableObject {
                 .map { canonicalAppName($0.appName) }
                 .filter { !$0.isEmpty }
         )
+        let lowerGridNameList = Array(lowerGridNames)
 
         detectedSlots.removeAll { detected in
             guard detected.slot.type == .app else {
@@ -3786,13 +3765,18 @@ final class RootViewModel: ObservableObject {
             if canonical.isEmpty {
                 return false
             }
+            if isWidgetLocked(detected.slot) {
+                return true
+            }
             if isLikelyWidgetNoiseName(canonical) {
                 return true
             }
             if lowerGridNames.contains(canonical), detected.slot.row <= 1 {
                 return true
             }
-            if isWidgetLocked(detected.slot), detected.confidence < 0.95 {
+            if detected.slot.row <= 1,
+               let matched = appNameMatcher.bestMatch(for: canonical, against: lowerGridNameList, minimumScore: 0.86),
+               canonical != matched {
                 return true
             }
             return false
@@ -3808,7 +3792,11 @@ final class RootViewModel: ObservableObject {
             guard !canonical.isEmpty else {
                 continue
             }
-            grouped[canonical, default: []].append(index)
+            if let clusterKey = bestCanonicalClusterKey(for: canonical, in: grouped.keys) {
+                grouped[clusterKey, default: []].append(index)
+            } else {
+                grouped[canonical, default: []].append(index)
+            }
         }
 
         var toRemove: Set<Int> = []
@@ -3845,6 +3833,22 @@ final class RootViewModel: ObservableObject {
                 return lhs.column < rhs.column
             }
         }
+    }
+
+    private func bestCanonicalClusterKey(
+        for canonical: String,
+        in keys: Dictionary<String, [Int]>.Keys
+    ) -> String? {
+        var bestKey: String?
+        var bestScore = 0.0
+        for key in keys {
+            let score = appNameMatcher.similarity(canonical, key)
+            if score > bestScore {
+                bestScore = score
+                bestKey = key
+            }
+        }
+        return bestScore >= 0.92 ? bestKey : nil
     }
 
     private func purgeDockPlaceholders() {
@@ -4089,7 +4093,7 @@ final class RootViewModel: ObservableObject {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
-        request.minimumTextHeight = 0.22
+        request.minimumTextHeight = 0.14
         let handler = VNImageRequestHandler(cgImage: crop, options: [:])
 
         do {
@@ -4104,7 +4108,7 @@ final class RootViewModel: ObservableObject {
 
         let text = normalizeDetectedAppName(top.string.trimmingCharacters(in: .whitespacesAndNewlines))
         let canonical = canonicalAppName(text)
-        guard !canonical.isEmpty, !isLikelyWidgetNoiseName(canonical), top.confidence >= 0.32 else {
+        guard !canonical.isEmpty, !isLikelyWidgetNoiseName(canonical), top.confidence >= 0.24 else {
             return nil
         }
 
@@ -4326,23 +4330,49 @@ final class RootViewModel: ObservableObject {
 
         let appThreshold = occupancyThreshold(
             scores: appScores.map(\.score),
-            minimum: 0.195,
-            sigmaScale: 0.72
+            minimum: 0.165,
+            sigmaScale: 0.66
         )
         let dockThreshold = occupancyThreshold(
             scores: dockScores.map(\.score),
-            minimum: 0.185,
-            sigmaScale: 0.65
+            minimum: 0.155,
+            sigmaScale: 0.58
         )
 
-        var selected = appScores
+        var selectedApps = appScores
             .filter { $0.score >= appThreshold }
             .map { (slot: $0.slot, score: $0.score) }
-        selected.append(
-            contentsOf: dockScores
-                .filter { $0.score >= dockThreshold }
-                .map { (slot: $0.slot, score: $0.score) }
-        )
+        if selectedApps.count < 6 {
+            let fallbackThreshold = max(0.145, appThreshold - 0.055)
+            for entry in appScores.sorted(by: { $0.score > $1.score }) where entry.score >= fallbackThreshold {
+                if selectedApps.contains(where: { $0.slot == entry.slot }) {
+                    continue
+                }
+                selectedApps.append((slot: entry.slot, score: entry.score))
+                if selectedApps.count >= 6 {
+                    break
+                }
+            }
+        }
+
+        var selectedDock = dockScores
+            .filter { $0.score >= dockThreshold }
+            .map { (slot: $0.slot, score: $0.score) }
+        if selectedDock.count < 2 {
+            let fallbackThreshold = max(0.13, dockThreshold - 0.07)
+            for entry in dockScores.sorted(by: { $0.score > $1.score }) where entry.score >= fallbackThreshold {
+                if selectedDock.contains(where: { $0.slot == entry.slot }) {
+                    continue
+                }
+                selectedDock.append((slot: entry.slot, score: entry.score))
+                if selectedDock.count >= 2 {
+                    break
+                }
+            }
+        }
+
+        var selected = selectedApps
+        selected.append(contentsOf: selectedDock)
 
         return selected.sorted { lhs, rhs in
             if lhs.slot.type != rhs.slot.type {

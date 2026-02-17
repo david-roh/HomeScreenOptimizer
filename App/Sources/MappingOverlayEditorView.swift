@@ -211,19 +211,22 @@ struct MappingOverlayEditorView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                HStack {
-                    Button("Auto Fix Conflicts") {
-                        model.autoResolveConflicts(on: selectedPage)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(conflictSlotsOnSelectedPage.isEmpty)
+                if !conflictSlotsOnSelectedPage.isEmpty || widgetLockMode {
+                    HStack {
+                        if !conflictSlotsOnSelectedPage.isEmpty {
+                            Button("Auto Fix Conflicts") {
+                                model.autoResolveConflicts(on: selectedPage)
+                            }
+                            .buttonStyle(.bordered)
+                        }
 
-                    Spacer()
+                        Spacer()
 
-                    if widgetLockMode {
-                        Text("Tap a cell to lock/unlock widget area.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        if widgetLockMode {
+                            Text("Tap a cell to lock/unlock widget area.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 
@@ -422,7 +425,7 @@ struct MappingOverlayEditorView: View {
 
     private var chipStrip: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Tap an app, then tap a cell. Drag to reposition. Bottom glass band is Dock.")
+            Text("Select app chip, then tap grid. Drag marker to reposition. Bottom glass band is Dock.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -564,25 +567,35 @@ struct MappingOverlayEditorView: View {
         let isSelected = selectedAppIndex == index
         let isDock = slot.type == .dock
 
-        return VStack(spacing: 2) {
-            detectedIconPreview(for: model.detectedSlots[index])
-                .frame(width: 24, height: 24)
+        return ZStack(alignment: .top) {
+            Circle()
+                .fill(isDock ? accent.opacity(0.28) : (isSelected ? accent.opacity(0.24) : Color(.systemBackground).opacity(0.88)))
+                .frame(width: 34, height: 34)
+                .overlay(
+                    Circle()
+                        .stroke(isSelected ? accent : Color.white.opacity(0.55), lineWidth: isSelected ? 1.6 : 0.9)
+                )
+                .shadow(color: Color.black.opacity(0.12), radius: 2, x: 0, y: 1)
 
-            Text(isDock ? "\(model.detectedSlots[index].appName) · Dock" : model.detectedSlots[index].appName)
-                .font(.system(size: 9, weight: .semibold, design: .rounded))
-                .lineLimit(1)
-                .frame(width: isDock ? 74 : 56)
+            detectedIconPreview(for: model.detectedSlots[index])
+                .frame(width: 22, height: 22)
+
+            if isSelected {
+                Text(isDock ? "\(model.detectedSlots[index].appName) · Dock" : model.detectedSlots[index].appName)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .stroke(accent.opacity(0.45), lineWidth: 0.8)
+                    )
+                    .offset(y: -24)
+            }
         }
-        .padding(4)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isDock ? accent.opacity(0.25) : (isSelected ? accent.opacity(0.22) : Color(.systemBackground).opacity(0.82)))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(isSelected ? accent : Color.white.opacity(0.45), lineWidth: isSelected ? 1.4 : 0.8)
-        )
         .position(point)
+        .contentShape(Rectangle())
         .onTapGesture {
             if selectedAppIndex == index {
                 beginRename(index: index)
