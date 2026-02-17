@@ -36,7 +36,17 @@ final class GuidedFlowSmokeTests: XCTestCase {
         }
 
         let customLabelField = app.textFields["Custom context label"]
-        XCTAssertTrue(customLabelField.waitForExistence(timeout: 3))
+        var foundCustomLabel = customLabelField.waitForExistence(timeout: 2)
+        if !foundCustomLabel {
+            for _ in 0..<3 where !foundCustomLabel {
+                app.swipeUp()
+                if app.buttons["Advanced"].exists {
+                    app.buttons["Advanced"].tap()
+                }
+                foundCustomLabel = customLabelField.exists
+            }
+        }
+        XCTAssertTrue(foundCustomLabel)
         XCTAssertFalse(app.buttons["Speed"].exists)
     }
 

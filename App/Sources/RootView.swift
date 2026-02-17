@@ -268,6 +268,9 @@ struct RootView: View {
 
             model.applyContextBaseline(for: newContext)
             syncPresetFromModelWeights()
+            if newContext == .custom {
+                showSetupAdvanced = true
+            }
         }
         .onChange(of: model.selectedProfileID) { _, _ in
             model.handleProfileSelectionChange()
@@ -1595,6 +1598,7 @@ struct RootView: View {
 
     private func saveProfileAndContinue() {
         model.saveProfile()
+        showSetupAdvanced = false
         if canOpenImport {
             withAnimation(.easeInOut(duration: 0.2)) {
                 selectedTab = .importData
@@ -2289,7 +2293,8 @@ final class RootViewModel: ObservableObject {
 
             let fileURL = try writeImageToTemporaryFile(data: data)
             importSession = try importCoordinator.addPage(sessionID: session.id, filePath: fileURL.path)
-            showStatus("Screenshot added.", level: .success)
+            showStatus("Screenshot added. Analyzing…", level: .success)
+            await analyzeLatestScreenshot()
         } catch {
             showStatus("Failed to add screenshot: \(error.localizedDescription)", level: .error)
         }
