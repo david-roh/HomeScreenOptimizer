@@ -306,7 +306,7 @@ struct RootView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
 
                 Color.clear
-                    .frame(height: 64)
+                    .frame(height: 82)
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
@@ -341,6 +341,7 @@ struct RootView: View {
                         Text(tab.title)
                             .font(.caption.weight(isActive ? .semibold : .medium))
                             .lineLimit(1)
+                            .minimumScaleFactor(0.78)
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 7)
@@ -406,7 +407,8 @@ struct RootView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(tab.headline)
                     .font(.headline.weight(.semibold))
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Text("\(Int((stageCompletion(for: tab) * 100).rounded()))%")
                     .font(.caption.weight(.semibold))
@@ -421,7 +423,8 @@ struct RootView: View {
                 Text(blocker)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 12)
@@ -439,7 +442,8 @@ struct RootView: View {
                 Text(hint)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Button {
@@ -522,7 +526,7 @@ struct RootView: View {
                 }
             }
 
-            HStack(spacing: 8) {
+            VStack(spacing: 8) {
                 compactSetupPicker(title: "Context", icon: "calendar", selection: $model.context) {
                     ForEach(ProfileContext.allCases, id: \.self) { value in
                         Text(value.displayTitle).tag(value)
@@ -530,19 +534,21 @@ struct RootView: View {
                 }
                 .accessibilityIdentifier("setup-context-picker")
 
-                compactSetupPicker(title: "Hand", icon: "hand.point.up.left", selection: $model.handedness) {
-                    ForEach(Handedness.allCases, id: \.self) { value in
-                        Text(value.displayTitle).tag(value)
+                HStack(spacing: 8) {
+                    compactSetupPicker(title: "Hand", icon: "hand.point.up.left", selection: $model.handedness) {
+                        ForEach(Handedness.allCases, id: \.self) { value in
+                            Text(value.displayTitle).tag(value)
+                        }
                     }
-                }
-                .accessibilityIdentifier("setup-hand-picker")
+                    .accessibilityIdentifier("setup-hand-picker")
 
-                compactSetupPicker(title: "Grip", icon: "iphone", selection: $model.gripMode) {
-                    ForEach(GripMode.allCases, id: \.self) { value in
-                        Text(value.displayTitle).tag(value)
+                    compactSetupPicker(title: "Grip", icon: "iphone", selection: $model.gripMode) {
+                        ForEach(GripMode.allCases, id: \.self) { value in
+                            Text(value.displayTitle).tag(value)
+                        }
                     }
+                    .accessibilityIdentifier("setup-grip-picker")
                 }
-                .accessibilityIdentifier("setup-grip-picker")
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -1156,73 +1162,75 @@ struct RootView: View {
             }
             .pickerStyle(.segmented)
 
-            if fineTuneMode == .weights {
-                VStack(alignment: .leading, spacing: 8) {
-                    weightRow(
-                        title: "Utility",
-                        detail: "",
-                        value: utilityWeightBinding,
-                        accent: Tab.setup.accent
-                    )
-                    weightRow(
-                        title: "Flow",
-                        detail: "",
-                        value: flowWeightBinding,
-                        accent: Tab.setup.accent
-                    )
-                    weightRow(
-                        title: "Aesthetics",
-                        detail: "",
-                        value: aestheticsWeightBinding,
-                        accent: Tab.setup.accent
-                    )
-                    weightRow(
-                        title: "Move Cost",
-                        detail: "",
-                        value: moveCostWeightBinding,
-                        accent: Tab.setup.accent
-                    )
-                }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color(.secondarySystemBackground))
-                )
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(model.calibrationCurrentTarget == nil ? "No active session" : "Tap highlighted target")
-                            .font(.subheadline.weight(.semibold))
-                        Spacer()
-                        Text(model.calibrationProgressLabel)
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
+            ScrollView(showsIndicators: false) {
+                if fineTuneMode == .weights {
+                    VStack(alignment: .leading, spacing: 8) {
+                        weightRow(
+                            title: "Utility",
+                            detail: "",
+                            value: utilityWeightBinding,
+                            accent: Tab.setup.accent
+                        )
+                        weightRow(
+                            title: "Flow",
+                            detail: "",
+                            value: flowWeightBinding,
+                            accent: Tab.setup.accent
+                        )
+                        weightRow(
+                            title: "Aesthetics",
+                            detail: "",
+                            value: aestheticsWeightBinding,
+                            accent: Tab.setup.accent
+                        )
+                        weightRow(
+                            title: "Move Cost",
+                            detail: "",
+                            value: moveCostWeightBinding,
+                            accent: Tab.setup.accent
+                        )
                     }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color(.secondarySystemBackground))
+                    )
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(model.calibrationCurrentTarget == nil ? "No active session" : "Tap highlighted target")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text(model.calibrationProgressLabel)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
 
-                    Button(model.calibrationInProgress ? "Restart Calibration" : "Start Calibration") {
-                        model.startCalibration()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Tab.setup.accent)
+                        Button(model.calibrationInProgress ? "Restart Calibration" : "Start Calibration") {
+                            model.startCalibration()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Tab.setup.accent)
 
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                        ForEach(calibrationCoordinates, id: \.id) { coordinate in
-                            Button("\(coordinate.row + 1),\(coordinate.column + 1)") {
-                                model.handleCalibrationTap(row: coordinate.row, column: coordinate.column)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                            ForEach(calibrationCoordinates, id: \.id) { coordinate in
+                                Button("\(coordinate.row + 1),\(coordinate.column + 1)") {
+                                    model.handleCalibrationTap(row: coordinate.row, column: coordinate.column)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(model.calibrationButtonTint(row: coordinate.row, column: coordinate.column))
+                                .disabled(!model.calibrationInProgress)
+                                .font(.caption.weight(.semibold))
+                                .controlSize(.small)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(model.calibrationButtonTint(row: coordinate.row, column: coordinate.column))
-                            .disabled(!model.calibrationInProgress)
-                            .font(.caption.weight(.semibold))
-                            .controlSize(.small)
                         }
                     }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color(.secondarySystemBackground))
+                    )
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color(.secondarySystemBackground))
-                )
             }
 
             Spacer(minLength: 0)
@@ -1398,7 +1406,7 @@ struct RootView: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                .minimumScaleFactor(0.75)
 
             Picker(title, selection: selection) {
                 content()
@@ -1408,10 +1416,10 @@ struct RootView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
-            .frame(minHeight: 38)
+            .frame(minHeight: 40)
             .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
-        .frame(minHeight: 64, alignment: .top)
+        .frame(minHeight: 66, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
