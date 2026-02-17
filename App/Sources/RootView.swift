@@ -65,6 +65,7 @@ struct RootView: View {
     @State private var showAllMoves = false
     @State private var showQuickStart = false
     @State private var quickStartPage = 0
+    @State private var fineTuneMode: FineTuneMode = .weights
     @AppStorage("hso_quick_start_seen_v2") private var quickStartSeen = false
 
     private enum Tab: String, CaseIterable {
@@ -135,6 +136,21 @@ struct RootView: View {
                 return "Generate plan"
             case .apply:
                 return "Apply safely"
+            }
+        }
+    }
+
+    private enum FineTuneMode: String, CaseIterable, Identifiable {
+        case weights
+        case calibration
+
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .weights:
+                return "Weights"
+            case .calibration:
+                return "Calibration"
             }
         }
     }
@@ -544,6 +560,7 @@ struct RootView: View {
 
             HStack {
                 Button("Fine Tune") {
+                    fineTuneMode = .weights
                     showTuneSheet = true
                 }
                 .buttonStyle(.bordered)
@@ -574,6 +591,7 @@ struct RootView: View {
                 HStack(spacing: 8) {
                     metricPill(title: "Pages", value: "\(session.pages.count)")
                     metricPill(title: "Apps", value: "\(model.detectedSlots.count)")
+                    metricPill(title: "Dock", value: "\(model.detectedSlots.filter { $0.slot.type == .dock }.count)")
                     Spacer()
                 }
 
@@ -610,7 +628,7 @@ struct RootView: View {
                         Text("Detected Apps")
                             .font(.subheadline.weight(.semibold))
 
-                        Text("Review names and position quickly. Each card shows icon preview + detected location.")
+                        Text("Review names and position quickly. OCR ignores widget text and separates Dock slots when detected.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
 
@@ -695,6 +713,30 @@ struct RootView: View {
                 metricPill(title: "Profile", value: model.activeProfileName ?? "None")
                 metricPill(title: "Detected", value: "\(model.detectedSlots.count)")
                 Spacer()
+            }
+
+            if !model.recommendedDockAppIDs.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Dock Suggestions")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(model.recommendedDockAppIDs, id: \.self) { appID in
+                                Label(model.displayName(for: appID), systemImage: "dock.rectangle")
+                                    .font(.caption.weight(.semibold))
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(Tab.plan.accent.opacity(0.14))
+                                    )
+                            }
+                        }
+                    }
+                }
             }
 
             Toggle(isOn: $model.manualUsageEnabled) {
@@ -972,74 +1014,91 @@ struct RootView: View {
 
     private var tuneSheet: some View {
         NavigationStack {
-            Form {
-                Section("How Weights Work") {
-                    Text("These weights decide what the optimizer values most. Higher value means stronger priority in final placement.")
-                    Text("Tip: keep all four non-zero so plans stay usable and not extreme.")
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Weights") {
-                    weightRow(
-                        title: "Utility",
-                        detail: "Boosts frequent apps into high-reach zones.",
-                        value: utilityWeightBinding,
-                        accent: Tab.setup.accent
-                    )
-                    weightRow(
-                        title: "Flow",
-                        detail: "Keeps likely app sequences close together.",
-                        value: flowWeightBinding,
-                        accent: Tab.setup.accent
-                    )
-                    weightRow(
-                        title: "Aesthetics",
-                        detail: "Improves visual grouping and pattern consistency.",
-                        value: aestheticsWeightBinding,
-                        accent: Tab.setup.accent
-                    )
-                    weightRow(
-                        title: "Move Cost",
-                        detail: "Penalizes excessive rearrangement steps.",
-                        value: moveCostWeightBinding,
-                        accent: Tab.setup.accent
-                    )
-                }
-
-                Section("Calibration Guide") {
-                    Text("1. Tap Start Calibration.")
-                    Text("2. Tap only the highlighted target as fast as possible.")
-                    Text("3. Repeat until all targets are completed.")
-                    Text("This personalizes reachability to your actual thumb movement.")
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Calibration") {
-                    if let target = model.calibrationCurrentTarget {
-                        Text("Current target: Row \(target.row + 1), Column \(target.column + 1)")
-                        Text("Progress: \(model.calibrationProgressLabel)")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("No active session")
-                            .foregroundStyle(.secondary)
+            VStack(spacing: 14) {
+                Picker("Fine Tune", selection: $fineTuneMode) {
+                    ForEach(FineTuneMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
                     }
+                }
+                .pickerStyle(.segmented)
 
-                    Button(model.calibrationInProgress ? "Restart Calibration" : "Start Calibration") {
-                        model.startCalibration()
+                if fineTuneMode == .weights {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Adjust tradeoffs quickly.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        weightRow(
+                            title: "Utility",
+                            detail: "Boost frequent apps into easiest-reach slots.",
+                            value: utilityWeightBinding,
+                            accent: Tab.setup.accent
+                        )
+                        weightRow(
+                            title: "Flow",
+                            detail: "Keep common task sequences close together.",
+                            value: flowWeightBinding,
+                            accent: Tab.setup.accent
+                        )
+                        weightRow(
+                            title: "Aesthetics",
+                            detail: "Favor visual grouping and cleaner patterning.",
+                            value: aestheticsWeightBinding,
+                            accent: Tab.setup.accent
+                        )
+                        weightRow(
+                            title: "Move Cost",
+                            detail: "Reduce disruption from large rearrangements.",
+                            value: moveCostWeightBinding,
+                            accent: Tab.setup.accent
+                        )
                     }
+                    .padding(14)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Start, then tap only the highlighted target as fast as possible.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                        ForEach(calibrationCoordinates, id: \.id) { coordinate in
-                            Button("\(coordinate.row + 1),\(coordinate.column + 1)") {
-                                model.handleCalibrationTap(row: coordinate.row, column: coordinate.column)
+                        HStack {
+                            if let target = model.calibrationCurrentTarget {
+                                Text("Target: R\(target.row + 1) C\(target.column + 1)")
+                                    .font(.subheadline.weight(.semibold))
+                            } else {
+                                Text("No active session")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(model.calibrationButtonTint(row: coordinate.row, column: coordinate.column))
-                            .disabled(!model.calibrationInProgress)
+                            Spacer()
+                            Text(model.calibrationProgressLabel)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Button(model.calibrationInProgress ? "Restart Calibration" : "Start Calibration") {
+                            model.startCalibration()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Tab.setup.accent)
+
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                            ForEach(calibrationCoordinates, id: \.id) { coordinate in
+                                Button("\(coordinate.row + 1),\(coordinate.column + 1)") {
+                                    model.handleCalibrationTap(row: coordinate.row, column: coordinate.column)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(model.calibrationButtonTint(row: coordinate.row, column: coordinate.column))
+                                .disabled(!model.calibrationInProgress)
+                            }
                         }
                     }
+                    .padding(14)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
+                Spacer(minLength: 0)
             }
+            .padding(16)
             .navigationTitle("Fine Tune")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -1050,7 +1109,7 @@ struct RootView: View {
                 }
             }
         }
-        .presentationDetents([.large])
+        .presentationDetents([.medium, .large])
     }
 
     private var quickStartSheet: some View {
@@ -1209,32 +1268,36 @@ struct RootView: View {
 
     private var styleDetailSheet: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Label(selectedPreset.title, systemImage: selectedPreset.iconName)
-                    .font(.title3.weight(.bold))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Label(selectedPreset.title, systemImage: selectedPreset.iconName)
+                        .font(.title3.weight(.bold))
 
-                Text(selectedPreset.engineDescription)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                VStack(spacing: 8) {
-                    styleWeightRow(title: "Utility", value: selectedPreset.weights.utility)
-                    styleWeightRow(title: "Flow", value: selectedPreset.weights.flow)
-                    styleWeightRow(title: "Aesthetics", value: selectedPreset.weights.aesthetics)
-                    styleWeightRow(title: "Move Cost", value: selectedPreset.weights.moveCost)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Best for: \(selectedPreset.bestFor)")
-                        .font(.subheadline)
-                    Text("Tradeoff: \(selectedPreset.tradeoff)")
+                    Text(selectedPreset.engineDescription)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                }
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                Spacer()
+                    VStack(spacing: 8) {
+                        styleWeightRow(title: "Utility", value: selectedPreset.weights.utility)
+                        styleWeightRow(title: "Flow", value: selectedPreset.weights.flow)
+                        styleWeightRow(title: "Aesthetics", value: selectedPreset.weights.aesthetics)
+                        styleWeightRow(title: "Move Cost", value: selectedPreset.weights.moveCost)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Best for: \(selectedPreset.bestFor)")
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Tradeoff: \(selectedPreset.tradeoff)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(20)
             }
-            .padding(20)
             .navigationTitle("Intent Details")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -1327,7 +1390,10 @@ struct RootView: View {
     }
 
     private func slotHumanLabel(_ slot: Slot) -> String {
-        "Page \(slot.page + 1) • Row \(slot.row + 1) • Col \(slot.column + 1)"
+        if slot.type == .dock {
+            return "Page \(slot.page + 1) • Dock \(slot.column + 1)"
+        }
+        return "Page \(slot.page + 1) • Row \(slot.row + 1) • Col \(slot.column + 1)"
     }
 
     private func applyPreset(_ preset: OptimizationPreset) {
@@ -1743,6 +1809,7 @@ final class RootViewModel: ObservableObject {
     @Published var lastCalibrationMap = ReachabilityMap()
     @Published var currentLayoutAssignments: [LayoutAssignment] = []
     @Published var recommendedLayoutAssignments: [LayoutAssignment] = []
+    @Published var recommendedDockAppIDs: [UUID] = []
     @Published var moveSteps: [MoveStep] = []
     @Published var simulationSummary: SimulationSummary?
     @Published var manualUsageEnabled = false
@@ -2194,6 +2261,9 @@ final class RootViewModel: ObservableObject {
             if lhs.slot.page != rhs.slot.page {
                 return lhs.slot.page < rhs.slot.page
             }
+            if lhs.slot.type != rhs.slot.type {
+                return lhs.slot.type == .app
+            }
             if lhs.slot.row != rhs.slot.row {
                 return lhs.slot.row < rhs.slot.row
             }
@@ -2220,6 +2290,11 @@ final class RootViewModel: ObservableObject {
             assignments.append(LayoutAssignment(appID: app.id, slot: detected.slot))
             appNames[app.id] = app.displayName
         }
+        let dockRecommendations = recommendDockApps(
+            apps: apps,
+            assignments: assignments
+        )
+        recommendedDockAppIDs = dockRecommendations
 
         let generated = layoutPlanner.generate(
             profile: profile,
@@ -2232,6 +2307,12 @@ final class RootViewModel: ObservableObject {
                 assignments: recommendedPlan.assignments,
                 appNamesByID: appNames,
                 mode: visualPatternMode
+            )
+        }
+        if !dockRecommendations.isEmpty {
+            recommendedPlan.assignments = applyDockRecommendations(
+                assignments: recommendedPlan.assignments,
+                dockAppIDs: dockRecommendations
             )
         }
         let planMoves = movePlanBuilder.buildMoves(
@@ -2414,7 +2495,11 @@ final class RootViewModel: ObservableObject {
         let columnUpperBound = 3
 
         mutable.slot.page = min(max(0, mutable.slot.page + pageDelta), pageUpperBound)
-        mutable.slot.row = min(max(0, mutable.slot.row + rowDelta), rowUpperBound)
+        if mutable.slot.type == .dock {
+            mutable.slot.row = 0
+        } else {
+            mutable.slot.row = min(max(0, mutable.slot.row + rowDelta), rowUpperBound)
+        }
         mutable.slot.column = min(max(0, mutable.slot.column + columnDelta), columnUpperBound)
         detectedSlots[index] = mutable
 
@@ -2423,7 +2508,7 @@ final class RootViewModel: ObservableObject {
         }
     }
 
-    func setDetectedSlot(index: Int, page: Int? = nil, row: Int? = nil, column: Int? = nil) {
+    func setDetectedSlot(index: Int, page: Int? = nil, row: Int? = nil, column: Int? = nil, type: SlotType? = nil) {
         guard detectedSlots.indices.contains(index) else {
             return
         }
@@ -2434,10 +2519,15 @@ final class RootViewModel: ObservableObject {
 
         var mutable = detectedSlots[index]
         let originalSlot = mutable.slot
+        if let type {
+            mutable.slot.type = type
+        }
         if let page {
             mutable.slot.page = min(max(0, page), pageUpperBound)
         }
-        if let row {
+        if mutable.slot.type == .dock {
+            mutable.slot.row = 0
+        } else if let row {
             mutable.slot.row = min(max(0, row), rowUpperBound)
         }
         if let column {
@@ -2552,6 +2642,9 @@ final class RootViewModel: ObservableObject {
                     if lhs.slot.page != rhs.slot.page {
                         return lhs.slot.page < rhs.slot.page
                     }
+                    if lhs.slot.type != rhs.slot.type {
+                        return lhs.slot.type == .app
+                    }
                     if lhs.slot.row != rhs.slot.row {
                         return lhs.slot.row < rhs.slot.row
                     }
@@ -2569,8 +2662,9 @@ final class RootViewModel: ObservableObject {
             if ocrCandidates.isEmpty {
                 showStatus("No likely app labels detected.", level: .info)
             } else {
+                let dockCount = detectedSlots.filter { $0.slot.type == .dock }.count
                 showStatus(
-                    "Extracted \(ocrCandidates.count) app labels and mapped \(detectedSlots.count) slots.",
+                    "Extracted \(ocrCandidates.count) app labels and mapped \(detectedSlots.count) slots (\(dockCount) dock).",
                     level: .success
                 )
             }
@@ -2882,6 +2976,7 @@ final class RootViewModel: ObservableObject {
     private func resetRecommendationOutput() {
         currentLayoutAssignments = []
         recommendedLayoutAssignments = []
+        recommendedDockAppIDs = []
         moveSteps = []
         simulationSummary = nil
         appNamesByID = [:]
@@ -3010,6 +3105,7 @@ final class RootViewModel: ObservableObject {
             LayoutAssignment(appID: betaID, slot: slotB),
             LayoutAssignment(appID: gammaID, slot: Slot(page: 0, row: 3, column: 2))
         ]
+        recommendedDockAppIDs = [alphaID, betaID]
         moveSteps = [
             MoveStep(appID: alphaID, fromSlot: slotA, toSlot: Slot(page: 0, row: 4, column: 3)),
             MoveStep(appID: gammaID, fromSlot: slotC, toSlot: Slot(page: 0, row: 3, column: 2))
@@ -3144,9 +3240,10 @@ final class RootViewModel: ObservableObject {
                 ),
                 iconCropRectFromSlot(
                     for: detected,
-                    cellWidth: cellWidth,
-                    cellHeight: cellHeight,
-                    rows: rows
+                    imageWidth: width,
+                    imageHeight: height,
+                    rows: rows,
+                    columns: columns
                 )
             ]
             .compactMap { $0?.integral.intersection(imageBounds) }
@@ -3203,20 +3300,39 @@ final class RootViewModel: ObservableObject {
 
     private func iconCropRectFromSlot(
         for detected: DetectedAppSlot,
-        cellWidth: CGFloat,
-        cellHeight: CGFloat,
-        rows: Int
+        imageWidth: CGFloat,
+        imageHeight: CGFloat,
+        rows: Int,
+        columns: Int
     ) -> CGRect? {
-        guard rows > 0 else {
+        guard rows > 0, columns > 0 else {
             return nil
+        }
+
+        let appGridTop = imageHeight * 0.15
+        let appGridBottom = imageHeight * 0.80
+        let appGridHeight = max(1, appGridBottom - appGridTop)
+        let appCellHeight = appGridHeight / CGFloat(rows)
+        let appCellWidth = imageWidth / CGFloat(columns)
+
+        if detected.slot.type == .dock {
+            let dockTop = imageHeight * 0.84
+            let dockHeight = imageHeight * 0.12
+            let iconSide = min(appCellWidth * 0.70, dockHeight * 0.74)
+            return CGRect(
+                x: CGFloat(detected.slot.column) * appCellWidth + (appCellWidth - iconSide) / 2,
+                y: dockTop + (dockHeight - iconSide) / 2,
+                width: iconSide,
+                height: iconSide
+            )
         }
 
         let rowFromTop = max(0, min(rows - 1, detected.slot.row))
         return CGRect(
-            x: CGFloat(detected.slot.column) * cellWidth + (cellWidth * 0.14),
-            y: CGFloat(rowFromTop) * cellHeight + (cellHeight * 0.06),
-            width: cellWidth * 0.72,
-            height: cellHeight * 0.62
+            x: CGFloat(detected.slot.column) * appCellWidth + (appCellWidth * 0.14),
+            y: appGridTop + CGFloat(rowFromTop) * appCellHeight + (appCellHeight * 0.06),
+            width: appCellWidth * 0.72,
+            height: appCellHeight * 0.62
         )
     }
 
@@ -3250,6 +3366,90 @@ final class RootViewModel: ObservableObject {
         return zip(orderedAppIDs, orderedSlots).map { appID, slot in
             LayoutAssignment(appID: appID, slot: slot)
         }
+    }
+
+    private func recommendDockApps(apps: [AppItem], assignments: [LayoutAssignment]) -> [UUID] {
+        guard !apps.isEmpty else {
+            return []
+        }
+
+        let slotByAppID = Dictionary(uniqueKeysWithValues: assignments.map { ($0.appID, $0.slot) })
+
+        let ranked = apps.sorted { lhs, rhs in
+            let lhsUsage = lhs.usageScore ?? 0
+            let rhsUsage = rhs.usageScore ?? 0
+
+            let lhsBoost = dockPriorityBoost(for: lhs.displayName, currentlyInDock: slotByAppID[lhs.id]?.type == .dock)
+            let rhsBoost = dockPriorityBoost(for: rhs.displayName, currentlyInDock: slotByAppID[rhs.id]?.type == .dock)
+
+            let lhsScore = (lhsUsage * 0.78) + lhsBoost
+            let rhsScore = (rhsUsage * 0.78) + rhsBoost
+            if lhsScore != rhsScore {
+                return lhsScore > rhsScore
+            }
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+        }
+
+        return Array(ranked.prefix(4).map(\.id))
+    }
+
+    private func dockPriorityBoost(for appName: String, currentlyInDock: Bool) -> Double {
+        let key = appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let essentialDockTerms = ["phone", "messages", "safari", "mail", "camera", "wallet", "maps"]
+        let essentialBoost = essentialDockTerms.contains(where: { key.contains($0) }) ? 0.22 : 0.0
+        let keepDockBoost = currentlyInDock ? 0.12 : 0.0
+        return essentialBoost + keepDockBoost
+    }
+
+    private func applyDockRecommendations(
+        assignments: [LayoutAssignment],
+        dockAppIDs: [UUID]
+    ) -> [LayoutAssignment] {
+        guard !assignments.isEmpty, !dockAppIDs.isEmpty else {
+            return assignments
+        }
+
+        let dockSlots = assignments
+            .map(\.slot)
+            .filter { $0.type == .dock }
+            .sorted { lhs, rhs in lhs.column < rhs.column }
+        guard !dockSlots.isEmpty else {
+            return assignments
+        }
+
+        var mutable = assignments
+        var slotByAppID = Dictionary(uniqueKeysWithValues: mutable.map { ($0.appID, $0.slot) })
+
+        for (dockIndex, dockSlot) in dockSlots.enumerated() {
+            guard dockIndex < dockAppIDs.count else {
+                break
+            }
+            let desiredAppID = dockAppIDs[dockIndex]
+            guard let currentSlotForDesired = slotByAppID[desiredAppID] else {
+                continue
+            }
+
+            guard let occupantID = slotByAppID.first(where: { $0.value == dockSlot })?.key else {
+                continue
+            }
+
+            if occupantID == desiredAppID {
+                continue
+            }
+
+            if let desiredIndex = mutable.firstIndex(where: { $0.appID == desiredAppID }) {
+                mutable[desiredIndex].slot = dockSlot
+            }
+
+            if let occupantIndex = mutable.firstIndex(where: { $0.appID == occupantID }) {
+                mutable[occupantIndex].slot = currentSlotForDesired
+            }
+
+            slotByAppID[desiredAppID] = dockSlot
+            slotByAppID[occupantID] = currentSlotForDesired
+        }
+
+        return mutable
     }
 
     private func visualSlotOrder(from slots: [Slot], mode: VisualPatternMode) -> [Slot] {

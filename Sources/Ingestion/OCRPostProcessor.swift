@@ -98,7 +98,6 @@ public struct OCRPostProcessor: Sendable {
         "edit",
         "done",
         "cancel",
-        "settings",
         "screen time",
         "app library",
         "today",

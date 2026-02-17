@@ -6,13 +6,65 @@ import UIKit
 struct MappingGridGeometry {
     let rows: Int
     let columns: Int
+    let appTopInsetRatio: CGFloat
+    let appBottomInsetRatio: CGFloat
+    let dockTopInsetRatio: CGFloat
+    let dockBottomInsetRatio: CGFloat
+
+    init(
+        rows: Int,
+        columns: Int,
+        appTopInsetRatio: CGFloat = 0.15,
+        appBottomInsetRatio: CGFloat = 0.20,
+        dockTopInsetRatio: CGFloat = 0.84,
+        dockBottomInsetRatio: CGFloat = 0.98
+    ) {
+        self.rows = rows
+        self.columns = columns
+        self.appTopInsetRatio = appTopInsetRatio
+        self.appBottomInsetRatio = appBottomInsetRatio
+        self.dockTopInsetRatio = dockTopInsetRatio
+        self.dockBottomInsetRatio = dockBottomInsetRatio
+    }
+
+    func appGridRect(in imageRect: CGRect) -> CGRect {
+        let top = imageRect.minY + (imageRect.height * appTopInsetRatio)
+        let bottom = imageRect.maxY - (imageRect.height * appBottomInsetRatio)
+        return CGRect(
+            x: imageRect.minX,
+            y: top,
+            width: imageRect.width,
+            height: max(1, bottom - top)
+        )
+    }
+
+    func dockRect(in imageRect: CGRect) -> CGRect {
+        let top = imageRect.minY + (imageRect.height * dockTopInsetRatio)
+        let bottom = imageRect.minY + (imageRect.height * dockBottomInsetRatio)
+        return CGRect(
+            x: imageRect.minX + (imageRect.width * 0.04),
+            y: top,
+            width: imageRect.width * 0.92,
+            height: max(1, bottom - top)
+        )
+    }
 
     func markerPoint(for slot: Slot, in imageRect: CGRect) -> CGPoint {
-        let cellWidth = imageRect.width / CGFloat(columns)
-        let cellHeight = imageRect.height / CGFloat(rows)
+        if slot.type == .dock {
+            let dockRect = dockRect(in: imageRect)
+            let dockCellWidth = dockRect.width / CGFloat(columns)
+            return CGPoint(
+                x: dockRect.minX + (CGFloat(slot.column) + 0.5) * dockCellWidth,
+                y: dockRect.midY
+            )
+        }
+
+        let gridRect = appGridRect(in: imageRect)
+        let cellWidth = gridRect.width / CGFloat(columns)
+        let cellHeight = gridRect.height / CGFloat(rows)
         return CGPoint(
-            x: imageRect.minX + (CGFloat(slot.column) + 0.5) * cellWidth,
-            y: imageRect.minY + (CGFloat(slot.row) + 0.5) * cellHeight
+            x: gridRect.minX + (CGFloat(slot.column) + 0.5) * cellWidth,
+            y: gridRect.minY + (CGFloat(slot.row) + 0.5) * cellHeight
         )
     }
 
@@ -21,16 +73,29 @@ struct MappingGridGeometry {
             return nil
         }
 
-        let normalizedX = (point.x - imageRect.minX) / imageRect.width
-        let normalizedY = (point.y - imageRect.minY) / imageRect.height
+        let dockRect = dockRect(in: imageRect)
+        if dockRect.contains(point) {
+            let normalizedDockX = (point.x - dockRect.minX) / max(dockRect.width, 1)
+            let dockColumn = Int(normalizedDockX * CGFloat(columns))
+            guard (0..<columns).contains(dockColumn) else {
+                return nil
+            }
+            return Slot(page: page, row: 0, column: dockColumn, type: .dock)
+        }
+
+        let gridRect = appGridRect(in: imageRect)
+        guard gridRect.contains(point) else {
+            return nil
+        }
+        let normalizedX = (point.x - gridRect.minX) / gridRect.width
+        let normalizedY = (point.y - gridRect.minY) / gridRect.height
         let column = Int(normalizedX * CGFloat(columns))
         let row = Int(normalizedY * CGFloat(rows))
-
         guard (0..<rows).contains(row), (0..<columns).contains(column) else {
             return nil
         }
 
-        return Slot(page: page, row: row, column: column)
+        return Slot(page: page, row: row, column: column, type: .app)
     }
 }
 
@@ -42,6 +107,21 @@ struct MappingOverlayEditorView: View {
     @State private var selectedPage = 0
     @State private var selectedAppIndex: Int?
     @State private var showListMode = false
+
+    private enum MappingZone: String, CaseIterable, Identifiable {
+        case grid
+        case dock
+
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .grid:
+                return "Grid"
+            case .dock:
+                return "Dock"
+            }
+        }
+    }
 
     private let rows = 6
     private let columns = 4
@@ -79,8 +159,7 @@ struct MappingOverlayEditorView: View {
         var counts: [Slot: Int] = [:]
 
         for index in indicesOnSelectedPage {
-            var key = model.detectedSlots[index].slot
-            key.type = .app
+            let key = model.detectedSlots[index].slot
             counts[key, default: 0] += 1
         }
 
@@ -222,20 +301,23 @@ struct MappingOverlayEditorView: View {
                         }
 
                         HStack {
-                            Picker("Row", selection: Binding(
-                                get: { model.detectedSlots[index].slot.row },
-                                set: { model.setDetectedSlot(index: index, row: $0) }
-                            )) {
+                            Picker("Zone", selection: zoneBinding(for: index)) {
+                                ForEach(MappingZone.allCases) { zone in
+                                    Text(zone.title).tag(zone)
+                                }
+                            }
+                            .pickerStyle(.menu)
+
+                            Picker("Row", selection: rowBinding(for: index)) {
                                 ForEach(0..<rows, id: \.self) { row in
                                     Text("Row \(row + 1)").tag(row)
                                 }
                             }
                             .pickerStyle(.menu)
+                            .disabled(isDockSlot(at: index))
+                            .opacity(isDockSlot(at: index) ? 0.5 : 1.0)
 
-                            Picker("Col", selection: Binding(
-                                get: { model.detectedSlots[index].slot.column },
-                                set: { model.setDetectedSlot(index: index, column: $0) }
-                            )) {
+                            Picker("Col", selection: columnBinding(for: index)) {
                                 ForEach(0..<columns, id: \.self) { column in
                                     Text("Col \(column + 1)").tag(column)
                                 }
@@ -254,7 +336,7 @@ struct MappingOverlayEditorView: View {
 
     private var chipStrip: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Tap an app, then tap a cell. You can also drag a marker to reassign.")
+            Text("Tap an app, then tap a cell. Drag to reposition. Bottom glass band is Dock.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -291,12 +373,20 @@ struct MappingOverlayEditorView: View {
 
     private func gridLayer(in imageRect: CGRect) -> some View {
         ZStack {
-            let cellWidth = imageRect.width / CGFloat(columns)
-            let cellHeight = imageRect.height / CGFloat(rows)
+            let appRect = geometry.appGridRect(in: imageRect)
+            let dockRect = geometry.dockRect(in: imageRect)
+            let cellWidth = appRect.width / CGFloat(columns)
+            let cellHeight = appRect.height / CGFloat(rows)
+            let dockCellWidth = dockRect.width / CGFloat(columns)
+
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.22), lineWidth: 0.8)
+                .frame(width: appRect.width, height: appRect.height)
+                .position(x: appRect.midX, y: appRect.midY)
 
             ForEach(0..<rows, id: \.self) { row in
                 ForEach(0..<columns, id: \.self) { column in
-                    let slot = Slot(page: selectedPage, row: row, column: column)
+                    let slot = Slot(page: selectedPage, row: row, column: column, type: .app)
                     let isConflict = conflictSlotsOnSelectedPage.contains(slot)
 
                     Rectangle()
@@ -304,10 +394,31 @@ struct MappingOverlayEditorView: View {
                         .background(isConflict ? Color.red.opacity(0.12) : Color.clear)
                         .frame(width: cellWidth, height: cellHeight)
                         .position(
-                            x: imageRect.minX + (CGFloat(column) + 0.5) * cellWidth,
-                            y: imageRect.minY + (CGFloat(row) + 0.5) * cellHeight
+                            x: appRect.minX + (CGFloat(column) + 0.5) * cellWidth,
+                            y: appRect.minY + (CGFloat(row) + 0.5) * cellHeight
                         )
                 }
+            }
+
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.46), lineWidth: 0.9)
+                )
+                .frame(width: dockRect.width, height: dockRect.height)
+                .position(x: dockRect.midX, y: dockRect.midY)
+
+            ForEach(0..<columns, id: \.self) { column in
+                let slot = Slot(page: selectedPage, row: 0, column: column, type: .dock)
+                let isConflict = conflictSlotsOnSelectedPage.contains(slot)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isConflict ? Color.red.opacity(0.92) : Color.white.opacity(0.45), lineWidth: isConflict ? 1.5 : 0.9)
+                    .frame(width: dockCellWidth - 6, height: dockRect.height - 10)
+                    .position(
+                        x: dockRect.minX + (CGFloat(column) + 0.5) * dockCellWidth,
+                        y: dockRect.midY
+                    )
             }
         }
     }
@@ -316,20 +427,21 @@ struct MappingOverlayEditorView: View {
         let slot = model.detectedSlots[index].slot
         let point = geometry.markerPoint(for: slot, in: imageRect)
         let isSelected = selectedAppIndex == index
+        let isDock = slot.type == .dock
 
         return VStack(spacing: 2) {
             detectedIconPreview(for: model.detectedSlots[index])
                 .frame(width: 24, height: 24)
 
-            Text(model.detectedSlots[index].appName)
+            Text(isDock ? "\(model.detectedSlots[index].appName) · Dock" : model.detectedSlots[index].appName)
                 .font(.system(size: 9, weight: .semibold, design: .rounded))
                 .lineLimit(1)
-                .frame(width: 56)
+                .frame(width: isDock ? 74 : 56)
         }
         .padding(4)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill((isSelected ? accent.opacity(0.22) : Color(.systemBackground).opacity(0.82)))
+                .fill(isDock ? accent.opacity(0.25) : (isSelected ? accent.opacity(0.22) : Color(.systemBackground).opacity(0.82)))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -359,8 +471,42 @@ struct MappingOverlayEditorView: View {
             index: index,
             page: slot.page,
             row: slot.row,
-            column: slot.column
+            column: slot.column,
+            type: slot.type
         )
+    }
+
+    private func zoneBinding(for index: Int) -> Binding<MappingZone> {
+        Binding(
+            get: {
+                model.detectedSlots[index].slot.type == .dock ? .dock : .grid
+            },
+            set: { newZone in
+                model.setDetectedSlot(
+                    index: index,
+                    row: newZone == .dock ? 0 : model.detectedSlots[index].slot.row,
+                    type: newZone == .dock ? .dock : .app
+                )
+            }
+        )
+    }
+
+    private func rowBinding(for index: Int) -> Binding<Int> {
+        Binding(
+            get: { model.detectedSlots[index].slot.row },
+            set: { model.setDetectedSlot(index: index, row: $0) }
+        )
+    }
+
+    private func columnBinding(for index: Int) -> Binding<Int> {
+        Binding(
+            get: { model.detectedSlots[index].slot.column },
+            set: { model.setDetectedSlot(index: index, column: $0) }
+        )
+    }
+
+    private func isDockSlot(at index: Int) -> Bool {
+        model.detectedSlots[index].slot.type == .dock
     }
 
     private func fittedImageRect(in container: CGRect, image: UIImage?) -> CGRect {

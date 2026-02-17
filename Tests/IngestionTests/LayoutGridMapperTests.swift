@@ -1,3 +1,4 @@
+import Core
 import Ingestion
 import XCTest
 
@@ -5,9 +6,9 @@ final class LayoutGridMapperTests: XCTestCase {
     func testMapConvertsLocatedCandidatesToExpectedSlots() {
         let mapper = HomeScreenGridMapper()
         let input = [
-            LocatedOCRLabelCandidate(text: "Maps", confidence: 0.9, centerX: 0.10, centerY: 0.90),
-            LocatedOCRLabelCandidate(text: "Mail", confidence: 0.8, centerX: 0.60, centerY: 0.90),
-            LocatedOCRLabelCandidate(text: "Camera", confidence: 0.95, centerX: 0.60, centerY: 0.20)
+            LocatedOCRLabelCandidate(text: "Maps", confidence: 0.9, centerX: 0.10, centerY: 0.75),
+            LocatedOCRLabelCandidate(text: "Mail", confidence: 0.8, centerX: 0.60, centerY: 0.75),
+            LocatedOCRLabelCandidate(text: "Camera", confidence: 0.95, centerX: 0.60, centerY: 0.35)
         ]
 
         let detection = mapper.map(locatedCandidates: input, page: 0, rows: 6, columns: 4)
@@ -17,16 +18,19 @@ final class LayoutGridMapperTests: XCTestCase {
         let maps = detection.apps.first { $0.appName == "Maps" }
         XCTAssertEqual(maps?.slot.row, 0)
         XCTAssertEqual(maps?.slot.column, 0)
+        XCTAssertEqual(maps?.slot.type, .app)
         XCTAssertEqual(maps?.labelCenterX ?? 0, 0.10, accuracy: 0.0001)
-        XCTAssertEqual(maps?.labelCenterY ?? 0, 0.90, accuracy: 0.0001)
+        XCTAssertEqual(maps?.labelCenterY ?? 0, 0.75, accuracy: 0.0001)
 
         let mail = detection.apps.first { $0.appName == "Mail" }
         XCTAssertEqual(mail?.slot.row, 0)
         XCTAssertEqual(mail?.slot.column, 2)
+        XCTAssertEqual(mail?.slot.type, .app)
 
         let camera = detection.apps.first { $0.appName == "Camera" }
         XCTAssertEqual(camera?.slot.row, 4)
         XCTAssertEqual(camera?.slot.column, 2)
+        XCTAssertEqual(camera?.slot.type, .app)
     }
 
     func testMapKeepsHighestConfidencePerSlot() {
@@ -101,5 +105,24 @@ final class LayoutGridMapperTests: XCTestCase {
 
         XCTAssertEqual(detection.apps.count, 1)
         XCTAssertEqual(detection.apps.first?.appName, "Health")
+    }
+
+    func testMapCreatesDockSlotForBottomLabels() {
+        let mapper = HomeScreenGridMapper()
+        let input = [
+            LocatedOCRLabelCandidate(
+                text: "Messages",
+                confidence: 0.88,
+                centerX: 0.68,
+                centerY: 0.05,
+                boxWidth: 0.14,
+                boxHeight: 0.03
+            )
+        ]
+
+        let detection = mapper.map(locatedCandidates: input, page: 1, rows: 6, columns: 4)
+
+        XCTAssertEqual(detection.apps.count, 1)
+        XCTAssertEqual(detection.apps[0].slot, Slot(page: 1, row: 0, column: 2, type: .dock))
     }
 }

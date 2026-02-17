@@ -36,6 +36,13 @@ struct HomeScreenLayoutPreviewView: View {
         previewModel.assignments(on: selectedPage, phase: .recommended, movedOnly: showMovedOnly)
     }
 
+    private var suggestedDockAppIDs: [UUID] {
+        let recommendedHasDock = model.recommendedLayoutAssignments.contains { assignment in
+            assignment.slot.page == selectedPage && assignment.slot.type == .dock
+        }
+        return recommendedHasDock ? [] : model.recommendedDockAppIDs
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -61,7 +68,8 @@ struct HomeScreenLayoutPreviewView: View {
                             rows: rows,
                             columns: columns,
                             appName: model.displayName(for:),
-                            iconData: model.previewIconData(for:)
+                            iconData: model.previewIconData(for:),
+                            suggestedDockAppIDs: []
                         )
 
                         PhoneLayoutCanvas(
@@ -71,8 +79,28 @@ struct HomeScreenLayoutPreviewView: View {
                             rows: rows,
                             columns: columns,
                             appName: model.displayName(for:),
-                            iconData: model.previewIconData(for:)
+                            iconData: model.previewIconData(for:),
+                            suggestedDockAppIDs: suggestedDockAppIDs
                         )
+                    }
+
+                    if !suggestedDockAppIDs.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Recommended Dock")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(suggestedDockAppIDs, id: \.self) { appID in
+                                        Label(model.displayName(for: appID), systemImage: "dock.rectangle")
+                                            .font(.caption.weight(.semibold))
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(Color(.tertiarySystemFill), in: Capsule())
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 10) {
@@ -130,6 +158,17 @@ private struct PhoneLayoutCanvas: View {
     let columns: Int
     let appName: (UUID) -> String
     let iconData: (UUID) -> Data?
+    let suggestedDockAppIDs: [UUID]
+
+    private var gridAssignments: [LayoutAssignment] {
+        assignments.filter { $0.slot.type != .dock }
+    }
+
+    private var dockAssignments: [LayoutAssignment] {
+        assignments
+            .filter { $0.slot.type == .dock }
+            .sorted { $0.slot.column < $1.slot.column }
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -140,6 +179,13 @@ private struct PhoneLayoutCanvas: View {
                 let frame = CGRect(origin: .zero, size: proxy.size)
                 let cellWidth = frame.width / CGFloat(columns)
                 let cellHeight = frame.height / CGFloat(rows)
+                let dockRect = CGRect(
+                    x: frame.width * 0.08,
+                    y: frame.height * 0.85,
+                    width: frame.width * 0.84,
+                    height: frame.height * 0.11
+                )
+                let dockCellWidth = dockRect.width / CGFloat(columns)
 
                 ZStack {
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -155,7 +201,7 @@ private struct PhoneLayoutCanvas: View {
                                 .stroke(Color(.quaternaryLabel), lineWidth: 0.8)
                         )
 
-                    ForEach(assignments, id: \.appID) { assignment in
+                    ForEach(gridAssignments, id: \.appID) { assignment in
                         let x = (CGFloat(assignment.slot.column) + 0.5) * cellWidth
                         let y = (CGFloat(assignment.slot.row) + 0.5) * cellHeight
                         let moved = movedAppIDs.contains(assignment.appID)
@@ -174,6 +220,43 @@ private struct PhoneLayoutCanvas: View {
                                 .frame(width: max(cellWidth - 2, 26))
                         }
                         .position(x: x, y: y)
+                    }
+
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.white.opacity(0.24))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.white.opacity(0.42), lineWidth: 0.8)
+                        )
+                        .frame(width: dockRect.width, height: dockRect.height)
+                        .position(x: dockRect.midX, y: dockRect.midY)
+
+                    ForEach(0..<columns, id: \.self) { column in
+                        let fallbackAppID = suggestedDockAppIDs.indices.contains(column) ? suggestedDockAppIDs[column] : nil
+                        let assignment = dockAssignments.first(where: { $0.slot.column == column })
+                        if let appID = assignment?.appID ?? fallbackAppID {
+                            let moved = movedAppIDs.contains(appID)
+                            VStack(spacing: 2) {
+                                iconView(for: appID)
+                                    .frame(width: 24, height: 24)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                            .stroke(moved ? Color.orange.opacity(0.9) : .clear, lineWidth: 1.2)
+                                    )
+                            }
+                            .position(
+                                x: dockRect.minX + (CGFloat(column) + 0.5) * dockCellWidth,
+                                y: dockRect.midY
+                            )
+                        } else {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(Color.white.opacity(0.32), lineWidth: 0.8)
+                                .frame(width: 24, height: 24)
+                                .position(
+                                    x: dockRect.minX + (CGFloat(column) + 0.5) * dockCellWidth,
+                                    y: dockRect.midY
+                                )
+                        }
                     }
                 }
             }
@@ -228,11 +311,11 @@ private struct TransitionLayoutCanvas: View {
     let iconData: (UUID) -> Data?
 
     private var currentByID: [UUID: Slot] {
-        Dictionary(uniqueKeysWithValues: current.map { ($0.appID, $0.slot) })
+        Dictionary(uniqueKeysWithValues: current.filter { $0.slot.type != .dock }.map { ($0.appID, $0.slot) })
     }
 
     private var recommendedByID: [UUID: Slot] {
-        Dictionary(uniqueKeysWithValues: recommended.map { ($0.appID, $0.slot) })
+        Dictionary(uniqueKeysWithValues: recommended.filter { $0.slot.type != .dock }.map { ($0.appID, $0.slot) })
     }
 
     private var appIDs: [UUID] {

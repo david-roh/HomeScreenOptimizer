@@ -44,6 +44,10 @@ public struct LayoutGridDetection: Codable, Hashable, Sendable {
 public struct HomeScreenGridMapper: Sendable {
     private let ignoredExactTerms: Set<String>
     private let ignoredSubstrings: [String]
+    private let appGridTopY: Double
+    private let appGridBottomY: Double
+    private let dockTopY: Double
+    private let dockBottomY: Double
 
     public init(
         ignoredExactTerms: Set<String> = [
@@ -54,10 +58,18 @@ public struct HomeScreenGridMapper: Sendable {
         ],
         ignoredSubstrings: [String] = [
             "no events", "weather", "battery", "calendar widget", "screen time"
-        ]
+        ],
+        appGridTopY: Double = 0.15,
+        appGridBottomY: Double = 0.80,
+        dockTopY: Double = 0.84,
+        dockBottomY: Double = 0.98
     ) {
         self.ignoredExactTerms = ignoredExactTerms
         self.ignoredSubstrings = ignoredSubstrings
+        self.appGridTopY = appGridTopY
+        self.appGridBottomY = appGridBottomY
+        self.dockTopY = dockTopY
+        self.dockBottomY = dockBottomY
     }
 
     public func map(
@@ -73,16 +85,22 @@ public struct HomeScreenGridMapper: Sendable {
         var bestBySlot: [Slot: (detected: DetectedAppSlot, score: Double)] = [:]
 
         for candidate in locatedCandidates {
-            guard isLikelyHomeScreenAppLabel(candidate) else {
+            let yFromTop = 1.0 - min(max(candidate.centerY, 0), 1)
+            guard isLikelyHomeScreenAppLabel(candidate, yFromTop: yFromTop) else {
                 continue
             }
 
             let x = min(max(candidate.centerX, 0), 0.9999)
-            let y = min(max(candidate.centerY, 0), 0.9999)
-
-            let rowFromTop = min(rows - 1, max(0, Int((1.0 - y) * Double(rows))))
             let column = min(columns - 1, max(0, Int(x * Double(columns))))
-            let slot = Slot(page: page, row: rowFromTop, column: column)
+            let slot: Slot
+            if (dockTopY...dockBottomY).contains(yFromTop) {
+                slot = Slot(page: page, row: 0, column: column, type: .dock)
+            } else {
+                guard let rowFromTop = mappedAppRow(for: yFromTop, rows: rows) else {
+                    continue
+                }
+                slot = Slot(page: page, row: rowFromTop, column: column, type: .app)
+            }
 
             let mapped = DetectedAppSlot(
                 appName: candidate.text,
@@ -93,7 +111,7 @@ public struct HomeScreenGridMapper: Sendable {
                 labelBoxWidth: candidate.boxWidth > 0 ? candidate.boxWidth : nil,
                 labelBoxHeight: candidate.boxHeight > 0 ? candidate.boxHeight : nil
             )
-            let candidateScore = slotLabelFitnessScore(candidate, row: rowFromTop, rows: rows)
+            let candidateScore = slotLabelFitnessScore(candidate, slot: slot, rows: rows, yFromTop: yFromTop)
             if let existing = bestBySlot[slot], existing.score >= candidateScore {
                 continue
             }
@@ -104,6 +122,9 @@ public struct HomeScreenGridMapper: Sendable {
         let sorted = bestBySlot.values.map(\.detected).sorted { lhs, rhs in
             if lhs.slot.page != rhs.slot.page {
                 return lhs.slot.page < rhs.slot.page
+            }
+            if lhs.slot.type != rhs.slot.type {
+                return slotTypeOrder(lhs.slot.type) < slotTypeOrder(rhs.slot.type)
             }
             if lhs.slot.row != rhs.slot.row {
                 return lhs.slot.row < rhs.slot.row
@@ -118,7 +139,22 @@ public struct HomeScreenGridMapper: Sendable {
         return LayoutGridDetection(rows: rows, columns: columns, apps: sorted)
     }
 
-    private func isLikelyHomeScreenAppLabel(_ candidate: LocatedOCRLabelCandidate) -> Bool {
+    private func slotTypeOrder(_ type: SlotType) -> Int {
+        switch type {
+        case .app:
+            return 0
+        case .dock:
+            return 1
+        case .folder:
+            return 2
+        case .widgetLocked:
+            return 3
+        case .holding:
+            return 4
+        }
+    }
+
+    private func isLikelyHomeScreenAppLabel(_ candidate: LocatedOCRLabelCandidate, yFromTop: Double) -> Bool {
         let lowered = candidate.text
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
@@ -139,6 +175,11 @@ public struct HomeScreenGridMapper: Sendable {
             return false
         }
 
+        let wordCount = lowered.split(whereSeparator: \.isWhitespace).count
+        if wordCount >= 2, candidate.boxWidth > 0.22 {
+            return false
+        }
+
         if candidate.boxWidth > 0, candidate.boxWidth > 0.34 {
             return false
         }
@@ -154,18 +195,52 @@ public struct HomeScreenGridMapper: Sendable {
             }
         }
 
+        if yFromTop < 0.08 || yFromTop > 0.99 {
+            return false
+        }
+
+        if yFromTop < appGridTopY - 0.05, candidate.boxWidth > 0.14 {
+            return false
+        }
+
+        if yFromTop > appGridBottomY, yFromTop < dockTopY {
+            return false
+        }
+
         return true
     }
 
-    private func slotLabelFitnessScore(_ candidate: LocatedOCRLabelCandidate, row: Int, rows: Int) -> Double {
+    private func mappedAppRow(for yFromTop: Double, rows: Int) -> Int? {
+        guard rows > 0 else {
+            return nil
+        }
+        guard yFromTop >= appGridTopY - 0.02, yFromTop <= appGridBottomY else {
+            return nil
+        }
+
+        let normalized = (yFromTop - appGridTopY) / max(appGridBottomY - appGridTopY, 0.0001)
+        let mapped = Int(normalized * Double(rows))
+        return min(rows - 1, max(0, mapped))
+    }
+
+    private func slotLabelFitnessScore(
+        _ candidate: LocatedOCRLabelCandidate,
+        slot: Slot,
+        rows: Int,
+        yFromTop: Double
+    ) -> Double {
+        if slot.type == .dock {
+            return candidate.confidence * 0.92
+        }
+
         guard rows > 0 else {
             return candidate.confidence
         }
 
-        let yFromTop = 1.0 - min(max(candidate.centerY, 0), 1)
+        let yWithinGrid = min(max((yFromTop - appGridTopY) / max(appGridBottomY - appGridTopY, 0.0001), 0), 1)
         let rowHeight = 1.0 / Double(rows)
-        let rowStart = Double(row) * rowHeight
-        let local = min(max((yFromTop - rowStart) / rowHeight, 0), 1)
+        let rowStart = Double(slot.row) * rowHeight
+        let local = min(max((yWithinGrid - rowStart) / rowHeight, 0), 1)
 
         let preferredLabelBand = 0.72
         let sigma = 0.24

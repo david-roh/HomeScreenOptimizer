@@ -90,7 +90,7 @@ public struct VisionLayoutOCRExtractor: LayoutOCRExtracting, LayoutOCRLocating {
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         try handler.perform([request])
 
-        var bestByText: [String: LocatedOCRLabelCandidate] = [:]
+        var bestByTextClusters: [String: [LocatedOCRLabelCandidate]] = [:]
 
         for observation in request.results ?? [] {
             guard let top = observation.topCandidates(1).first else {
@@ -119,25 +119,40 @@ public struct VisionLayoutOCRExtractor: LayoutOCRExtracting, LayoutOCRLocating {
             )
 
             let key = normalized.text.lowercased()
-            if let existing = bestByText[key], existing.confidence >= located.confidence {
-                continue
+            var clusters = bestByTextClusters[key, default: []]
+            if let nearbyIndex = clusters.firstIndex(where: { isNearby($0, located) }) {
+                if clusters[nearbyIndex].confidence < located.confidence {
+                    clusters[nearbyIndex] = located
+                }
+            } else {
+                clusters.append(located)
             }
-
-            bestByText[key] = located
+            bestByTextClusters[key] = clusters
         }
 
-        return bestByText.values.sorted { lhs, rhs in
+        return bestByTextClusters.values
+            .flatMap { $0 }
+            .sorted { lhs, rhs in
             if lhs.confidence == rhs.confidence {
                 return lhs.text < rhs.text
             }
 
             return lhs.confidence > rhs.confidence
         }
-        #else
+#else
         _ = screenshotPath
         throw OCRExtractionError.visionUnavailable
-        #endif
+#endif
     }
+
+    #if canImport(CoreGraphics) && canImport(ImageIO) && canImport(Vision)
+    private func isNearby(_ lhs: LocatedOCRLabelCandidate, _ rhs: LocatedOCRLabelCandidate) -> Bool {
+        let dx = lhs.centerX - rhs.centerX
+        let dy = lhs.centerY - rhs.centerY
+        let distance = sqrt((dx * dx) + (dy * dy))
+        return distance <= 0.08
+    }
+    #endif
 }
 
 public struct StubLayoutOCRExtractor: LayoutOCRExtracting, LayoutOCRLocating {

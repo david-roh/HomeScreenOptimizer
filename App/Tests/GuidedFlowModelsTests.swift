@@ -93,15 +93,19 @@ final class GuidedFlowModelsTests: XCTestCase {
         let geometry = MappingGridGeometry(rows: 6, columns: 4)
         let rect = CGRect(x: 0, y: 0, width: 400, height: 600)
 
-        let topLeft = geometry.slot(for: CGPoint(x: 1, y: 1), in: rect, page: 0)
+        let topLeft = geometry.slot(for: CGPoint(x: 1, y: 95), in: rect, page: 0)
         let center = geometry.slot(for: CGPoint(x: 150, y: 250), in: rect, page: 0)
-        let bottomRight = geometry.slot(for: CGPoint(x: 399, y: 599), in: rect, page: 0)
-        let centerPoint = geometry.markerPoint(for: Slot(page: 0, row: 2, column: 1), in: rect)
+        let bottomRight = geometry.slot(for: CGPoint(x: 399, y: 479), in: rect, page: 0)
+        let dockSlot = geometry.slot(for: CGPoint(x: 180, y: 560), in: rect, page: 0)
+        let centerPoint = geometry.markerPoint(for: Slot(page: 0, row: 2, column: 1, type: .app), in: rect)
+        let dockPoint = geometry.markerPoint(for: Slot(page: 0, row: 0, column: 2, type: .dock), in: rect)
 
-        XCTAssertEqual(topLeft, Slot(page: 0, row: 0, column: 0))
-        XCTAssertEqual(center, Slot(page: 0, row: 2, column: 1))
-        XCTAssertEqual(bottomRight, Slot(page: 0, row: 5, column: 3))
+        XCTAssertEqual(topLeft, Slot(page: 0, row: 0, column: 0, type: .app))
+        XCTAssertEqual(center, Slot(page: 0, row: 2, column: 1, type: .app))
+        XCTAssertEqual(bottomRight, Slot(page: 0, row: 5, column: 3, type: .app))
+        XCTAssertEqual(dockSlot, Slot(page: 0, row: 0, column: 1, type: .dock))
         XCTAssertEqual(centerPoint.x, 150, accuracy: 0.0001)
-        XCTAssertEqual(centerPoint.y, 250, accuracy: 0.0001)
+        XCTAssertEqual(centerPoint.y, 252.5, accuracy: 0.0001)
+        XCTAssertEqual(dockPoint.y, 546, accuracy: 0.0001)
     }
 }

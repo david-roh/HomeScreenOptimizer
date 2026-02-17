@@ -60,6 +60,9 @@ public struct ReachabilityAwareLayoutPlanner {
             if lhsReach != rhsReach {
                 return lhsReach > rhsReach
             }
+            if lhs.type != rhs.type {
+                return lhs.type == .dock
+            }
 
             if lhs.page != rhs.page {
                 return lhs.page < rhs.page
@@ -132,6 +135,14 @@ public struct ReachabilityAwareLayoutPlanner {
             handednessFactor = rightBias
         case .alternating:
             handednessFactor = max(leftBias, rightBias)
+        }
+
+        if slot.type == .dock {
+            return profile.gripMode == .oneHand ? 1.0 : 0.95
+        }
+
+        if slot.type == .widgetLocked {
+            return 0.01
         }
 
         switch profile.gripMode {

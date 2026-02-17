@@ -91,4 +91,30 @@ final class ReachabilityAwareLayoutPlannerTests: XCTestCase {
             result.currentScore.aggregateScore
         )
     }
+
+    func testGeneratePrefersDockSlotForHighUsageWhenDockExists() {
+        let planner = ReachabilityAwareLayoutPlanner()
+        let profile = Profile(
+            name: "Dock",
+            context: .workday,
+            handedness: .right,
+            gripMode: .oneHand
+        )
+
+        let dock = Slot(page: 0, row: 0, column: 1, type: .dock)
+        let grid = Slot(page: 0, row: 5, column: 3, type: .app)
+
+        let highUse = AppItem(displayName: "Messages", usageScore: 0.95)
+        let lowUse = AppItem(displayName: "Calendar", usageScore: 0.10)
+
+        let current = [
+            LayoutAssignment(appID: highUse.id, slot: grid),
+            LayoutAssignment(appID: lowUse.id, slot: dock)
+        ]
+
+        let result = planner.generate(profile: profile, apps: [highUse, lowUse], currentAssignments: current)
+        let assignedSlot = result.recommendedPlan.assignments.first { $0.appID == highUse.id }?.slot
+
+        XCTAssertEqual(assignedSlot, dock)
+    }
 }
