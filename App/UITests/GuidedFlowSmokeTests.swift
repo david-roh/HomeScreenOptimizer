@@ -86,7 +86,10 @@ final class GuidedFlowSmokeTests: XCTestCase {
         app.launchArguments += ["-uitesting-unlock-tabs", "-uitesting-seed-flow"]
         app.launch()
 
-        app.tabBars.buttons["Import"].tap()
+        let primary = app.buttons["bottom-primary-action"]
+        if primary.waitForExistence(timeout: 6) {
+            primary.tap()
+        }
         let edit = app.buttons["edit-mappings"]
         XCTAssertTrue(edit.waitForExistence(timeout: 6))
         edit.tap()
@@ -111,7 +114,16 @@ final class GuidedFlowSmokeTests: XCTestCase {
         app.launchArguments += ["-uitesting-unlock-tabs", "-uitesting-seed-flow"]
         app.launch()
 
-        app.tabBars.buttons["Plan"].tap()
+        let primary = app.buttons["bottom-primary-action"]
+        for _ in 0..<3 {
+            if app.buttons["Generate Rearrangement"].exists || app.buttons["preview-final-layout"].exists {
+                break
+            }
+            if primary.exists, primary.isHittable {
+                primary.tap()
+            }
+        }
+
         let generate = app.buttons["Generate Rearrangement"]
         if generate.waitForExistence(timeout: 4) && generate.isHittable {
             generate.tap()

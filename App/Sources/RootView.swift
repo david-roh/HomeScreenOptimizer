@@ -68,6 +68,7 @@ struct RootView: View {
     @State private var showLayoutPreview = false
     @State private var showAllMoves = false
     @State private var showQuickStart = false
+    @State private var showProfileLibrary = false
     @State private var quickStartPage = 0
     @State private var fineTuneMode: FineTuneMode = .weights
     @AppStorage("hso_quick_start_seen_v2") private var quickStartSeen = false
@@ -178,37 +179,16 @@ struct RootView: View {
 
     var body: some View {
         NavigationStack {
-            TabView(selection: guidedTabSelection) {
-                stageScaffold(for: .setup) {
+            stageScaffold(for: selectedTab) {
+                switch selectedTab {
+                case .setup:
                     setupCard
-                }
-                .tag(Tab.setup)
-                .tabItem {
-                    Label(Tab.setup.title, systemImage: tabBarIcon(for: .setup))
-                }
-
-                stageScaffold(for: .importData) {
+                case .importData:
                     importCard
-                }
-                .tag(Tab.importData)
-                .tabItem {
-                    Label(Tab.importData.title, systemImage: tabBarIcon(for: .importData))
-                }
-
-                stageScaffold(for: .plan) {
+                case .plan:
                     planCard
-                }
-                .tag(Tab.plan)
-                .tabItem {
-                    Label(Tab.plan.title, systemImage: tabBarIcon(for: .plan))
-                }
-
-                stageScaffold(for: .apply) {
+                case .apply:
                     applyCard
-                }
-                .tag(Tab.apply)
-                .tabItem {
-                    Label(Tab.apply.title, systemImage: tabBarIcon(for: .apply))
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
@@ -230,6 +210,9 @@ struct RootView: View {
         }
         .sheet(isPresented: $showFinalLayoutPreview) {
             HomeScreenLayoutPreviewView(model: model)
+        }
+        .sheet(isPresented: $showProfileLibrary) {
+            profileLibrarySheet
         }
         .overlay {
             if showTuneSheet {
@@ -297,26 +280,6 @@ struct RootView: View {
         }
     }
 
-    private var guidedTabSelection: Binding<Tab> {
-        Binding(
-            get: { selectedTab },
-            set: { newValue in
-                guard !bypassGuidedTabValidation else {
-                    selectedTab = newValue
-                    return
-                }
-
-                guard let reason = blockedReason(for: newValue) else {
-                    selectedTab = newValue
-                    return
-                }
-
-                model.presentStatus(reason, level: .info)
-                selectedTab = firstIncompleteTab()
-            }
-        )
-    }
-
     private func stageBackground(for tab: Tab) -> some View {
         LinearGradient(
             colors: [
@@ -332,6 +295,7 @@ struct RootView: View {
     private func stageScaffold<Content: View>(for tab: Tab, @ViewBuilder content: () -> Content) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                stageStepper
                 stageHeader(for: tab)
 
                 if shouldShowStatusBanner(on: tab) {
@@ -351,6 +315,62 @@ struct RootView: View {
         .scrollIndicators(.hidden)
         .safeAreaInset(edge: .bottom) {
             reachableActionRail(for: tab)
+        }
+    }
+
+    private var stageStepper: some View {
+        HStack(spacing: 8) {
+            ForEach(Tab.allCases, id: \.self) { tab in
+                let isActive = tab == selectedTab
+                let unlocked = canAccess(tab)
+
+                Button {
+                    guard unlocked else {
+                        if let reason = blockedReason(for: tab) {
+                            model.presentStatus(reason, level: .info)
+                        }
+                        return
+                    }
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selectedTab = tab
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: unlocked ? tab.icon : "lock.fill")
+                            .font(.caption2.weight(.semibold))
+                        Text(tab.title)
+                            .font(.caption.weight(isActive ? .semibold : .medium))
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 7)
+                    .foregroundStyle(isActive ? Color.white : (unlocked ? Color.primary : Color.secondary))
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(isActive ? selectedTab.accent : Color(.secondarySystemGroupedBackground))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(isActive ? selectedTab.accent.opacity(0.25) : Color.clear, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer(minLength: 0)
+
+            if hasSavedProfile {
+                Button {
+                    showProfileLibrary = true
+                } label: {
+                    Image(systemName: "books.vertical")
+                        .font(.caption.weight(.semibold))
+                        .padding(8)
+                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("open-profile-library")
+            }
         }
     }
 
@@ -1281,6 +1301,47 @@ struct RootView: View {
             }
         }
         .presentationDetents([.medium])
+    }
+
+    private var profileLibrarySheet: some View {
+        NavigationStack {
+            List {
+                Section("Saved Profiles") {
+                    if model.savedProfiles.isEmpty {
+                        Text("No saved profiles yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.savedProfiles) { profile in
+                            Button {
+                                model.selectedProfileID = profile.id
+                                ignoreContextBaselineOnce = true
+                                model.loadSelectedProfileIntoEditor()
+                                syncPresetFromModelWeights()
+                                selectedTab = .setup
+                                showProfileLibrary = false
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(profile.name)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    Text(profile.context.displayTitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Profiles")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        showProfileLibrary = false
+                    }
+                }
+            }
+        }
     }
 
     private func card<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {

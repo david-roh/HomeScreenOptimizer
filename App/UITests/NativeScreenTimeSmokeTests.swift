@@ -12,7 +12,15 @@ final class NativeScreenTimeSmokeTests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.buttons["bottom-primary-action"].waitForExistence(timeout: 8))
-        app.tabBars.buttons["Plan"].tap()
+
+        let planStage = app.buttons["Plan"].firstMatch
+        if planStage.waitForExistence(timeout: 3) {
+            planStage.tap()
+        } else {
+            for _ in 0..<3 where app.buttons["bottom-primary-action"].isHittable {
+                app.buttons["bottom-primary-action"].tap()
+            }
+        }
 
         let connectButton = app.buttons["Connect Screen Time"]
         let refreshButton = app.buttons["Refresh Access"]
