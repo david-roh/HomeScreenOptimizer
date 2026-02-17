@@ -319,18 +319,20 @@ struct RootView: View {
 
     private func stageScaffold<Content: View>(for tab: Tab, @ViewBuilder content: () -> Content) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                stageHeader(for: tab)
+            maybeGlassContainer {
+                VStack(alignment: .leading, spacing: 10) {
+                    stageHeader(for: tab)
 
-                if shouldShowStatusBanner(on: tab) {
-                    statusBanner
+                    if shouldShowStatusBanner(on: tab) {
+                        statusBanner
+                    }
+
+                    content()
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+
+                    Color.clear
+                        .frame(height: 8)
                 }
-
-                content()
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-
-                Color.clear
-                    .frame(height: 8)
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
@@ -458,7 +460,7 @@ struct RootView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(stageSurface(accent: tab.accent, cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(tab.accent.opacity(0.24), lineWidth: 1)
@@ -479,7 +481,24 @@ struct RootView: View {
     }
 
     private func reachableActionRail(for tab: Tab) -> some View {
-        VStack(spacing: 8) {
+        let actionButton = Button {
+            advanceFrom(stage: tab)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: tab.icon)
+                Text(primaryActionLabel(for: tab))
+                    .fontWeight(.semibold)
+                Spacer()
+                Image(systemName: "arrow.right")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+        }
+        .disabled(isPrimaryActionDisabled(for: tab))
+        .accessibilityIdentifier("bottom-primary-action")
+
+        return VStack(spacing: 8) {
             if let hint = stageShortHint(for: tab), isPrimaryActionDisabled(for: tab) {
                 Text(hint)
                     .font(.caption)
@@ -488,29 +507,20 @@ struct RootView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Button {
-                advanceFrom(stage: tab)
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: tab.icon)
-                    Text(primaryActionLabel(for: tab))
-                        .fontWeight(.semibold)
-                    Spacer()
-                    Image(systemName: "arrow.right")
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+            if #available(iOS 26, *) {
+                actionButton
+                    .buttonStyle(.glassProminent)
+                    .tint(tab.accent)
+            } else {
+                actionButton
+                    .buttonStyle(.borderedProminent)
+                    .tint(tab.accent)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(tab.accent)
-            .disabled(isPrimaryActionDisabled(for: tab))
-            .accessibilityIdentifier("bottom-primary-action")
         }
         .padding(.horizontal, 14)
         .padding(.top, 8)
         .padding(.bottom, 6)
-        .background(.ultraThinMaterial)
+        .background(actionRailSurface(cornerRadius: 0))
     }
 
     private var statusBanner: some View {
@@ -522,10 +532,7 @@ struct RootView: View {
             Spacer()
         }
         .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(model.statusLevel.tint.opacity(0.10))
-        )
+        .background(stageSurface(accent: model.statusLevel.tint, cornerRadius: 12))
     }
 
     private var setupCard: some View {
@@ -1358,22 +1365,56 @@ struct RootView: View {
             content()
         }
         .padding(12)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.78),
-                    selectedTab.accent.opacity(0.10)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-        )
+        .background(stageSurface(accent: selectedTab.accent, cornerRadius: 18))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(selectedTab.accent.opacity(0.28), lineWidth: 1)
         )
         .shadow(color: selectedTab.accent.opacity(0.14), radius: 10, x: 0, y: 5)
+    }
+
+    @ViewBuilder
+    private func maybeGlassContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        if #available(iOS 26, *) {
+            GlassEffectContainer(spacing: 10) {
+                content()
+            }
+        } else {
+            content()
+        }
+    }
+
+    @ViewBuilder
+    private func stageSurface(accent: Color, cornerRadius: CGFloat) -> some View {
+        if #available(iOS 26, *) {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.white.opacity(0.01))
+                .glassEffect(.regular.tint(accent.opacity(0.14)), in: .rect(cornerRadius: cornerRadius))
+        } else {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.78),
+                            accent.opacity(0.10)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        }
+    }
+
+    @ViewBuilder
+    private func actionRailSurface(cornerRadius: CGFloat) -> some View {
+        if #available(iOS 26, *) {
+            Rectangle()
+                .fill(Color.white.opacity(0.01))
+                .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        } else {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+        }
     }
 
     private func pickerRow<Selection: Hashable, Content: View>(
