@@ -231,6 +231,17 @@ struct PreviewLayoutModel {
 
     let currentAssignments: [LayoutAssignment]
     let recommendedAssignments: [LayoutAssignment]
+    let widgetLockedSlots: [Slot]
+
+    init(
+        currentAssignments: [LayoutAssignment],
+        recommendedAssignments: [LayoutAssignment],
+        widgetLockedSlots: [Slot] = []
+    ) {
+        self.currentAssignments = currentAssignments
+        self.recommendedAssignments = recommendedAssignments
+        self.widgetLockedSlots = widgetLockedSlots
+    }
 
     var movedAppIDs: Set<UUID> {
         let currentByID = Dictionary(uniqueKeysWithValues: currentAssignments.map { ($0.appID, $0.slot) })

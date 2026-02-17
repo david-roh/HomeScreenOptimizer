@@ -16,7 +16,8 @@ struct HomeScreenLayoutPreviewView: View {
     private var previewModel: PreviewLayoutModel {
         PreviewLayoutModel(
             currentAssignments: model.currentLayoutAssignments,
-            recommendedAssignments: model.recommendedLayoutAssignments
+            recommendedAssignments: model.recommendedLayoutAssignments,
+            widgetLockedSlots: model.widgetLockedSlots
         )
     }
 
@@ -64,6 +65,7 @@ struct HomeScreenLayoutPreviewView: View {
                         PhoneLayoutCanvas(
                             title: "Current",
                             assignments: beforeAssignments,
+                            widgetLockedSlots: previewModel.widgetLockedSlots.filter { $0.page == selectedPage },
                             movedAppIDs: movedAppIDs,
                             rows: rows,
                             columns: columns,
@@ -75,6 +77,7 @@ struct HomeScreenLayoutPreviewView: View {
                         PhoneLayoutCanvas(
                             title: "Recommended",
                             assignments: afterAssignments,
+                            widgetLockedSlots: previewModel.widgetLockedSlots.filter { $0.page == selectedPage },
                             movedAppIDs: movedAppIDs,
                             rows: rows,
                             columns: columns,
@@ -153,6 +156,7 @@ struct HomeScreenLayoutPreviewView: View {
 private struct PhoneLayoutCanvas: View {
     let title: String
     let assignments: [LayoutAssignment]
+    let widgetLockedSlots: [Slot]
     let movedAppIDs: Set<UUID>
     let rows: Int
     let columns: Int
@@ -220,6 +224,24 @@ private struct PhoneLayoutCanvas: View {
                                 .frame(width: max(cellWidth - 2, 26))
                         }
                         .position(x: x, y: y)
+                    }
+
+                    ForEach(widgetLockedSlots, id: \.self) { slot in
+                        let x = (CGFloat(slot.column) + 0.5) * cellWidth
+                        let y = (CGFloat(slot.row) + 0.5) * cellHeight
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.gray.opacity(0.18))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(Color.gray.opacity(0.40), lineWidth: 1)
+                            )
+                            .frame(width: max(cellWidth - 8, 18), height: max(cellHeight - 10, 14))
+                            .overlay(
+                                Image(systemName: "square.grid.2x2.fill")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            )
+                            .position(x: x, y: y)
                     }
 
                     RoundedRectangle(cornerRadius: 14, style: .continuous)

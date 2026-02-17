@@ -107,6 +107,9 @@ struct MappingOverlayEditorView: View {
     @State private var selectedPage = 0
     @State private var selectedAppIndex: Int?
     @State private var showListMode = false
+    @State private var widgetLockMode = false
+    @State private var showAddAppPrompt = false
+    @State private var addAppName = ""
 
     private enum MappingZone: String, CaseIterable, Identifiable {
         case grid
@@ -168,6 +171,10 @@ struct MappingOverlayEditorView: View {
         })
     }
 
+    private var widgetSlotsOnSelectedPage: [Slot] {
+        model.widgetLockedSlots.filter { $0.page == selectedPage }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
@@ -184,6 +191,14 @@ struct MappingOverlayEditorView: View {
                         }
                     }
                     .pickerStyle(.menu)
+
+                    Button {
+                        widgetLockMode.toggle()
+                    } label: {
+                        Label(widgetLockMode ? "Widgets On" : "Widgets", systemImage: widgetLockMode ? "square.grid.2x2.fill" : "square.grid.2x2")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
                 }
 
                 if !conflictSlotsOnSelectedPage.isEmpty {
@@ -191,6 +206,22 @@ struct MappingOverlayEditorView: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                HStack {
+                    Button("Auto Fix Conflicts") {
+                        model.autoResolveConflicts(on: selectedPage)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(conflictSlotsOnSelectedPage.isEmpty)
+
+                    Spacer()
+
+                    if widgetLockMode {
+                        Text("Tap a cell to lock/unlock widget area.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 if showListMode {
@@ -203,6 +234,18 @@ struct MappingOverlayEditorView: View {
             }
             .padding(16)
             .navigationTitle("Edit Mappings")
+            .alert("Add Missing App", isPresented: $showAddAppPrompt) {
+                TextField("App name", text: $addAppName)
+                Button("Cancel", role: .cancel) {
+                    addAppName = ""
+                }
+                Button("Add") {
+                    model.addDetectedApp(name: addAppName, page: selectedPage)
+                    addAppName = ""
+                }
+            } message: {
+                Text("Add an app that OCR missed, then place it on the overlay.")
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Reset") {
@@ -210,6 +253,14 @@ struct MappingOverlayEditorView: View {
                         if !pageIndicesSet.contains(selectedPage) {
                             selectedPage = pageIndices.first ?? 0
                         }
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showAddAppPrompt = true
+                    } label: {
+                        Image(systemName: "plus")
                     }
                 }
 
@@ -268,8 +319,14 @@ struct MappingOverlayEditorView: View {
                             .gesture(
                                 DragGesture(minimumDistance: 0)
                                     .onEnded { value in
-                                        guard let selectedAppIndex,
-                                              let slot = geometry.slot(for: value.location, in: imageRect, page: selectedPage) else {
+                                        guard let slot = geometry.slot(for: value.location, in: imageRect, page: selectedPage) else {
+                                            return
+                                        }
+                                        if widgetLockMode, slot.type == .app {
+                                            model.toggleWidgetLock(slot)
+                                            return
+                                        }
+                                        guard let selectedAppIndex else {
                                             return
                                         }
                                         applySlot(slot, to: selectedAppIndex)
@@ -326,6 +383,16 @@ struct MappingOverlayEditorView: View {
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                        HStack {
+                            Button("Remove") {
+                                model.removeDetectedApp(index: index)
+                            }
+                            .font(.caption)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.red)
+                            Spacer()
+                        }
                     }
                     .padding(.vertical, 4)
                 }
@@ -342,6 +409,17 @@ struct MappingOverlayEditorView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
+                    Button {
+                        showAddAppPrompt = true
+                    } label: {
+                        Label("Add App", systemImage: "plus.circle.fill")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(Color(.tertiarySystemFill), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+
                     ForEach(indicesOnSelectedPage, id: \.self) { index in
                         let detected = model.detectedSlots[index]
                         Button {
@@ -365,6 +443,13 @@ struct MappingOverlayEditorView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                model.removeDetectedApp(index: index)
+                            } label: {
+                                Label("Remove", systemImage: "trash")
+                            }
+                        }
                     }
                 }
             }
@@ -372,33 +457,20 @@ struct MappingOverlayEditorView: View {
     }
 
     private func gridLayer(in imageRect: CGRect) -> some View {
-        ZStack {
-            let appRect = geometry.appGridRect(in: imageRect)
-            let dockRect = geometry.dockRect(in: imageRect)
-            let cellWidth = appRect.width / CGFloat(columns)
-            let cellHeight = appRect.height / CGFloat(rows)
-            let dockCellWidth = dockRect.width / CGFloat(columns)
+        let appRect = geometry.appGridRect(in: imageRect)
+        let dockRect = geometry.dockRect(in: imageRect)
+        let cellWidth = appRect.width / CGFloat(columns)
+        let cellHeight = appRect.height / CGFloat(rows)
+        let dockCellWidth = dockRect.width / CGFloat(columns)
 
+        return ZStack {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.white.opacity(0.22), lineWidth: 0.8)
                 .frame(width: appRect.width, height: appRect.height)
                 .position(x: appRect.midX, y: appRect.midY)
 
-            ForEach(0..<rows, id: \.self) { row in
-                ForEach(0..<columns, id: \.self) { column in
-                    let slot = Slot(page: selectedPage, row: row, column: column, type: .app)
-                    let isConflict = conflictSlotsOnSelectedPage.contains(slot)
-
-                    Rectangle()
-                        .stroke(isConflict ? Color.red.opacity(0.8) : Color.white.opacity(0.35), lineWidth: isConflict ? 1.4 : 0.8)
-                        .background(isConflict ? Color.red.opacity(0.12) : Color.clear)
-                        .frame(width: cellWidth, height: cellHeight)
-                        .position(
-                            x: appRect.minX + (CGFloat(column) + 0.5) * cellWidth,
-                            y: appRect.minY + (CGFloat(row) + 0.5) * cellHeight
-                        )
-                }
-            }
+            appGridCells(appRect: appRect, cellWidth: cellWidth, cellHeight: cellHeight)
+            widgetBadges(appRect: appRect, cellWidth: cellWidth, cellHeight: cellHeight)
 
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(Color.white.opacity(0.12))
@@ -409,17 +481,57 @@ struct MappingOverlayEditorView: View {
                 .frame(width: dockRect.width, height: dockRect.height)
                 .position(x: dockRect.midX, y: dockRect.midY)
 
+            dockCells(dockRect: dockRect, dockCellWidth: dockCellWidth)
+        }
+    }
+
+    private func appGridCells(appRect: CGRect, cellWidth: CGFloat, cellHeight: CGFloat) -> some View {
+        ForEach(0..<rows, id: \.self) { row in
             ForEach(0..<columns, id: \.self) { column in
-                let slot = Slot(page: selectedPage, row: 0, column: column, type: .dock)
+                let slot = Slot(page: selectedPage, row: row, column: column, type: .app)
                 let isConflict = conflictSlotsOnSelectedPage.contains(slot)
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(isConflict ? Color.red.opacity(0.92) : Color.white.opacity(0.45), lineWidth: isConflict ? 1.5 : 0.9)
-                    .frame(width: dockCellWidth - 6, height: dockRect.height - 10)
+                let isWidgetLocked = model.isWidgetLocked(slot)
+                let stroke = isConflict ? Color.red.opacity(0.8) : (isWidgetLocked ? Color.orange.opacity(0.82) : Color.white.opacity(0.35))
+                let fill = isConflict ? Color.red.opacity(0.12) : (isWidgetLocked ? Color.orange.opacity(0.16) : Color.clear)
+                let width = isConflict ? 1.4 : (isWidgetLocked ? 1.2 : 0.8)
+
+                Rectangle()
+                    .stroke(stroke, lineWidth: width)
+                    .background(fill)
+                    .frame(width: cellWidth, height: cellHeight)
                     .position(
-                        x: dockRect.minX + (CGFloat(column) + 0.5) * dockCellWidth,
-                        y: dockRect.midY
+                        x: appRect.minX + (CGFloat(column) + 0.5) * cellWidth,
+                        y: appRect.minY + (CGFloat(row) + 0.5) * cellHeight
                     )
             }
+        }
+    }
+
+    private func widgetBadges(appRect: CGRect, cellWidth: CGFloat, cellHeight: CGFloat) -> some View {
+        ForEach(widgetSlotsOnSelectedPage, id: \.self) { slot in
+            let x = appRect.minX + (CGFloat(slot.column) + 0.5) * cellWidth
+            let y = appRect.minY + (CGFloat(slot.row) + 0.5) * cellHeight
+            Label("Widget", systemImage: "square.grid.2x2.fill")
+                .font(.system(size: 9, weight: .semibold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 3)
+                .background(Color.orange.opacity(0.24), in: Capsule())
+                .foregroundStyle(.orange)
+                .position(x: x, y: y)
+        }
+    }
+
+    private func dockCells(dockRect: CGRect, dockCellWidth: CGFloat) -> some View {
+        ForEach(0..<columns, id: \.self) { column in
+            let slot = Slot(page: selectedPage, row: 0, column: column, type: .dock)
+            let isConflict = conflictSlotsOnSelectedPage.contains(slot)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isConflict ? Color.red.opacity(0.92) : Color.white.opacity(0.45), lineWidth: isConflict ? 1.5 : 0.9)
+                .frame(width: dockCellWidth - 6, height: dockRect.height - 10)
+                .position(
+                    x: dockRect.minX + (CGFloat(column) + 0.5) * dockCellWidth,
+                    y: dockRect.midY
+                )
         }
     }
 
@@ -454,6 +566,9 @@ struct MappingOverlayEditorView: View {
         .gesture(
             DragGesture(minimumDistance: 6)
                 .onEnded { value in
+                    guard !widgetLockMode else {
+                        return
+                    }
                     let destination = CGPoint(
                         x: point.x + value.translation.width,
                         y: point.y + value.translation.height

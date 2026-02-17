@@ -33,11 +33,13 @@ public struct LayoutGridDetection: Codable, Hashable, Sendable {
     public var rows: Int
     public var columns: Int
     public var apps: [DetectedAppSlot]
+    public var widgetLockedSlots: [Slot]
 
-    public init(rows: Int, columns: Int, apps: [DetectedAppSlot]) {
+    public init(rows: Int, columns: Int, apps: [DetectedAppSlot], widgetLockedSlots: [Slot] = []) {
         self.rows = rows
         self.columns = columns
         self.apps = apps
+        self.widgetLockedSlots = widgetLockedSlots
     }
 }
 
@@ -79,9 +81,15 @@ public struct HomeScreenGridMapper: Sendable {
         columns: Int = 4
     ) -> LayoutGridDetection {
         guard rows > 0, columns > 0 else {
-            return LayoutGridDetection(rows: max(0, rows), columns: max(0, columns), apps: [])
+            return LayoutGridDetection(rows: max(0, rows), columns: max(0, columns), apps: [], widgetLockedSlots: [])
         }
 
+        let inferredWidgetSlots = inferWidgetLockedSlots(
+            from: locatedCandidates,
+            page: page,
+            rows: rows,
+            columns: columns
+        )
         var bestBySlot: [Slot: (detected: DetectedAppSlot, score: Double)] = [:]
 
         for candidate in locatedCandidates {
@@ -100,6 +108,9 @@ public struct HomeScreenGridMapper: Sendable {
                     continue
                 }
                 slot = Slot(page: page, row: rowFromTop, column: column, type: .app)
+                if inferredWidgetSlots.contains(slot) {
+                    continue
+                }
             }
 
             let mapped = DetectedAppSlot(
@@ -119,7 +130,14 @@ public struct HomeScreenGridMapper: Sendable {
             bestBySlot[slot] = (mapped, candidateScore)
         }
 
-        let sorted = bestBySlot.values.map(\.detected).sorted { lhs, rhs in
+        let deduped = resolveLikelyWidgetDuplicates(
+            mappedBySlot: bestBySlot,
+            page: page
+        )
+        var combinedWidgetSlots = inferredWidgetSlots
+        combinedWidgetSlots.formUnion(deduped.widgetSlots)
+
+        let sorted = deduped.apps.sorted { lhs, rhs in
             if lhs.slot.page != rhs.slot.page {
                 return lhs.slot.page < rhs.slot.page
             }
@@ -135,8 +153,15 @@ public struct HomeScreenGridMapper: Sendable {
 
             return lhs.appName < rhs.appName
         }
+        let sortedWidgetSlots = combinedWidgetSlots
+            .map { Slot(page: page, row: $0.row, column: $0.column, type: .widgetLocked) }
+            .sorted { lhs, rhs in
+                if lhs.page != rhs.page { return lhs.page < rhs.page }
+                if lhs.row != rhs.row { return lhs.row < rhs.row }
+                return lhs.column < rhs.column
+            }
 
-        return LayoutGridDetection(rows: rows, columns: columns, apps: sorted)
+        return LayoutGridDetection(rows: rows, columns: columns, apps: sorted, widgetLockedSlots: sortedWidgetSlots)
     }
 
     private func slotTypeOrder(_ type: SlotType) -> Int {
@@ -208,6 +233,130 @@ public struct HomeScreenGridMapper: Sendable {
         }
 
         return true
+    }
+
+    private func inferWidgetLockedSlots(
+        from candidates: [LocatedOCRLabelCandidate],
+        page: Int,
+        rows: Int,
+        columns: Int
+    ) -> Set<Slot> {
+        var locked: Set<Slot> = []
+        let appGridHeight = max(appGridBottomY - appGridTopY, 0.0001)
+        let ignoredWeekdays: Set<String> = [
+            "sun", "mon", "tue", "wed", "thu", "fri", "sat",
+            "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"
+        ]
+
+        for candidate in candidates {
+            let lowered = candidate.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !lowered.isEmpty else {
+                continue
+            }
+            let yFromTop = 1.0 - min(max(candidate.centerY, 0), 1)
+            guard yFromTop >= appGridTopY, yFromTop <= appGridBottomY else {
+                continue
+            }
+
+            let wordCount = lowered.split(whereSeparator: \.isWhitespace).count
+            let largeLabel = candidate.boxWidth > 0.24 || candidate.boxHeight > 0.07
+            let phraseLabel = wordCount >= 2 && (candidate.boxWidth > 0.14 || candidate.boxHeight > 0.035)
+            let calendarText = ignoredWeekdays.contains(lowered)
+                || lowered.contains("no events")
+                || lowered.contains("today")
+                || lowered.contains("weather")
+                || lowered.contains("widget")
+            guard largeLabel || phraseLabel || calendarText else {
+                continue
+            }
+
+            guard let anchorRow = mappedAppRow(for: yFromTop, rows: rows) else {
+                continue
+            }
+            let x = min(max(candidate.centerX, 0), 0.9999)
+            let anchorColumn = min(columns - 1, max(0, Int(x * Double(columns))))
+
+            let spanColumns = min(
+                columns,
+                max(
+                    1,
+                    Int(round(candidate.boxWidth * Double(columns))) + (phraseLabel ? 1 : 0)
+                )
+            )
+            let normalizedHeight = candidate.boxHeight > 0 ? candidate.boxHeight / appGridHeight : 0
+            let spanRows = min(
+                rows,
+                max(
+                    1,
+                    Int(round(normalizedHeight * Double(rows))) + (largeLabel ? 1 : 0)
+                )
+            )
+
+            let rowStart = max(0, min(rows - spanRows, anchorRow - (spanRows / 2)))
+            let colStart = max(0, min(columns - spanColumns, anchorColumn - (spanColumns / 2)))
+
+            for row in rowStart..<(rowStart + spanRows) {
+                for column in colStart..<(colStart + spanColumns) {
+                    locked.insert(Slot(page: page, row: row, column: column, type: .app))
+                }
+            }
+        }
+
+        return locked
+    }
+
+    private func resolveLikelyWidgetDuplicates(
+        mappedBySlot: [Slot: (detected: DetectedAppSlot, score: Double)],
+        page: Int
+    ) -> (apps: [DetectedAppSlot], widgetSlots: Set<Slot>) {
+        let all = mappedBySlot.values.map { (slot: $0.detected.slot, detected: $0.detected, score: $0.score) }
+        var grouped: [String: [(slot: Slot, detected: DetectedAppSlot, score: Double)]] = [:]
+
+        for item in all where item.slot.type == .app {
+            let key = normalizedText(item.detected.appName)
+            guard !key.isEmpty else {
+                continue
+            }
+            grouped["\(item.slot.page)::\(key)", default: []].append(item)
+        }
+
+        var winners: Set<Slot> = Set(all.map(\.slot))
+        var widgetSlots: Set<Slot> = []
+
+        for (_, entries) in grouped where entries.count > 1 {
+            let sorted = entries.sorted { lhs, rhs in
+                let lhsRank = lhs.score + (Double(lhs.slot.row) * 0.04)
+                let rhsRank = rhs.score + (Double(rhs.slot.row) * 0.04)
+                if lhsRank != rhsRank {
+                    return lhsRank > rhsRank
+                }
+                return lhs.detected.confidence > rhs.detected.confidence
+            }
+
+            guard let winner = sorted.first else {
+                continue
+            }
+
+            for candidate in sorted.dropFirst() {
+                winners.remove(candidate.slot)
+                if candidate.slot.page == page, candidate.slot.row <= winner.slot.row {
+                    widgetSlots.insert(Slot(page: page, row: candidate.slot.row, column: candidate.slot.column, type: .app))
+                }
+            }
+        }
+
+        let filtered = all
+            .filter { winners.contains($0.slot) }
+            .map(\.detected)
+
+        return (filtered, widgetSlots)
+    }
+
+    private func normalizedText(_ text: String) -> String {
+        text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
     }
 
     private func mappedAppRow(for yFromTop: Double, rows: Int) -> Int? {

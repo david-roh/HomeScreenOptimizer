@@ -125,4 +125,61 @@ final class LayoutGridMapperTests: XCTestCase {
         XCTAssertEqual(detection.apps.count, 1)
         XCTAssertEqual(detection.apps[0].slot, Slot(page: 1, row: 0, column: 2, type: .dock))
     }
+
+    func testMapDedupesLikelyWidgetDuplicateAppLabel() {
+        let mapper = HomeScreenGridMapper()
+        let input = [
+            LocatedOCRLabelCandidate(
+                text: "Maps",
+                confidence: 0.93,
+                centerX: 0.26,
+                centerY: 0.70,
+                boxWidth: 0.11,
+                boxHeight: 0.03
+            ),
+            LocatedOCRLabelCandidate(
+                text: "Maps",
+                confidence: 0.91,
+                centerX: 0.28,
+                centerY: 0.46,
+                boxWidth: 0.11,
+                boxHeight: 0.03
+            )
+        ]
+
+        let detection = mapper.map(locatedCandidates: input, page: 0, rows: 6, columns: 4)
+
+        XCTAssertEqual(detection.apps.count, 1)
+        XCTAssertEqual(detection.apps[0].appName, "Maps")
+        XCTAssertGreaterThanOrEqual(detection.apps[0].slot.row, 3)
+        XCTAssertTrue(detection.widgetLockedSlots.contains(where: { $0.row <= 1 && $0.column == 1 }))
+    }
+
+    func testMapInfersWidgetLockedSlotsFromWideWidgetText() {
+        let mapper = HomeScreenGridMapper()
+        let input = [
+            LocatedOCRLabelCandidate(
+                text: "No Events Today",
+                confidence: 0.98,
+                centerX: 0.72,
+                centerY: 0.82,
+                boxWidth: 0.42,
+                boxHeight: 0.11
+            ),
+            LocatedOCRLabelCandidate(
+                text: "Photos",
+                confidence: 0.88,
+                centerX: 0.32,
+                centerY: 0.48,
+                boxWidth: 0.10,
+                boxHeight: 0.03
+            )
+        ]
+
+        let detection = mapper.map(locatedCandidates: input, page: 0, rows: 6, columns: 4)
+
+        XCTAssertEqual(detection.apps.count, 1)
+        XCTAssertEqual(detection.apps[0].appName, "Photos")
+        XCTAssertFalse(detection.widgetLockedSlots.isEmpty)
+    }
 }

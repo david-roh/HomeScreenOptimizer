@@ -256,6 +256,59 @@ final class RootViewModelTests: XCTestCase {
         XCTAssertEqual(model.detectedIconPreviewDataBySlot[expected], marker)
     }
 
+    func testToggleWidgetLockRemovesMappedAppAtLockedCell() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        let slot = Slot(page: 0, row: 1, column: 1, type: .app)
+        model.detectedSlots = [
+            DetectedAppSlot(appName: "Maps", confidence: 0.9, slot: slot)
+        ]
+
+        model.toggleWidgetLock(slot)
+
+        XCTAssertTrue(model.detectedSlots.isEmpty)
+        XCTAssertTrue(model.widgetLockedSlots.contains(where: { $0.page == 0 && $0.row == 1 && $0.column == 1 }))
+    }
+
+    func testAutoResolveConflictsMovesDuplicateToFreeSlot() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        let duplicate = Slot(page: 0, row: 2, column: 2, type: .app)
+        model.detectedSlots = [
+            DetectedAppSlot(appName: "Maps", confidence: 0.9, slot: duplicate),
+            DetectedAppSlot(appName: "Mail", confidence: 0.8, slot: duplicate),
+            DetectedAppSlot(appName: "News", confidence: 0.7, slot: Slot(page: 0, row: 3, column: 1, type: .app))
+        ]
+
+        XCTAssertTrue(model.hasSlotConflicts)
+        model.autoResolveConflicts(on: 0)
+        XCTAssertFalse(model.hasSlotConflicts)
+    }
+
+    func testDockPinKeepsPinnedAppInDockRecommendations() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        let profile = Profile(name: "Tester", context: .workday, handedness: .right, gripMode: .oneHand)
+        model.savedProfiles = [profile]
+        model.selectedProfileID = profile.id
+        model.detectedSlots = [
+            DetectedAppSlot(appName: "Alpha", confidence: 0.9, slot: Slot(page: 0, row: 0, column: 0)),
+            DetectedAppSlot(appName: "Beta", confidence: 0.9, slot: Slot(page: 0, row: 0, column: 1)),
+            DetectedAppSlot(appName: "Gamma", confidence: 0.9, slot: Slot(page: 0, row: 0, column: 2)),
+            DetectedAppSlot(appName: "Delta", confidence: 0.9, slot: Slot(page: 0, row: 0, column: 3)),
+            DetectedAppSlot(appName: "Epsilon", confidence: 0.9, slot: Slot(page: 0, row: 1, column: 0))
+        ]
+        model.manualUsageEnabled = true
+        model.bindingForUsageMinutes(appName: "Alpha").wrappedValue = "5"
+        model.bindingForUsageMinutes(appName: "Beta").wrappedValue = "180"
+        model.bindingForUsageMinutes(appName: "Gamma").wrappedValue = "160"
+        model.bindingForUsageMinutes(appName: "Delta").wrappedValue = "140"
+        model.bindingForUsageMinutes(appName: "Epsilon").wrappedValue = "120"
+        model.toggleDockPin("Alpha")
+
+        model.generateRecommendationGuide()
+
+        let dockNames = model.recommendedDockAppIDs.map { model.displayName(for: $0) }
+        XCTAssertTrue(dockNames.contains("Alpha"))
+    }
+
     func testPreviewIconDataResolvesByCanonicalDisplayName() throws {
         let model = configuredModelWithGeneratedGuide()
         let alphaID = try XCTUnwrap(
