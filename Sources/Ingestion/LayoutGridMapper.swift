@@ -291,12 +291,30 @@ public struct HomeScreenGridMapper: Sendable {
                     Int(round(normalizedHeight * Double(rows))) + (largeLabel ? 1 : 0)
                 )
             )
+            var effectiveSpanColumns = spanColumns
+            var effectiveSpanRows = spanRows
 
-            let rowStart = max(0, min(rows - spanRows, anchorRow - (spanRows / 2)))
-            let colStart = max(0, min(columns - spanColumns, anchorColumn - (spanColumns / 2)))
+            if calendarText {
+                effectiveSpanColumns = max(effectiveSpanColumns, 2)
+                effectiveSpanRows = max(effectiveSpanRows, 2)
+            }
 
-            for row in rowStart..<(rowStart + spanRows) {
-                for column in colStart..<(colStart + spanColumns) {
+            if largeLabel, candidate.boxWidth > 0.30 {
+                effectiveSpanColumns = max(effectiveSpanColumns, 2)
+            }
+
+            if anchorRow <= 1, (calendarText || phraseLabel) {
+                effectiveSpanRows = max(effectiveSpanRows, 2)
+            }
+
+            effectiveSpanColumns = min(columns, max(1, effectiveSpanColumns))
+            effectiveSpanRows = min(rows, max(1, effectiveSpanRows))
+
+            let rowStart = max(0, min(rows - effectiveSpanRows, anchorRow - (effectiveSpanRows / 2)))
+            let colStart = max(0, min(columns - effectiveSpanColumns, anchorColumn - (effectiveSpanColumns / 2)))
+
+            for row in rowStart..<(rowStart + effectiveSpanRows) {
+                for column in colStart..<(colStart + effectiveSpanColumns) {
                     locked.insert(Slot(page: page, row: row, column: column, type: .app))
                 }
             }
@@ -341,6 +359,15 @@ public struct HomeScreenGridMapper: Sendable {
                 winners.remove(candidate.slot)
                 if candidate.slot.page == page, candidate.slot.row <= winner.slot.row {
                     widgetSlots.insert(Slot(page: page, row: candidate.slot.row, column: candidate.slot.column, type: .app))
+                    if candidate.slot.row <= 1 {
+                        let rowUpper = min(5, candidate.slot.row + 1)
+                        let colUpper = min(3, candidate.slot.column + 1)
+                        for row in candidate.slot.row...rowUpper {
+                            for column in candidate.slot.column...colUpper {
+                                widgetSlots.insert(Slot(page: page, row: row, column: column, type: .app))
+                            }
+                        }
+                    }
                 }
             }
         }

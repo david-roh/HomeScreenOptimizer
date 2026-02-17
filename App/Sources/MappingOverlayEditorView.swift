@@ -110,6 +110,9 @@ struct MappingOverlayEditorView: View {
     @State private var widgetLockMode = false
     @State private var showAddAppPrompt = false
     @State private var addAppName = ""
+    @State private var renameAppIndex: Int?
+    @State private var renameAppName = ""
+    @State private var showRenamePrompt = false
 
     private enum MappingZone: String, CaseIterable, Identifiable {
         case grid
@@ -245,6 +248,22 @@ struct MappingOverlayEditorView: View {
                 }
             } message: {
                 Text("Add an app that OCR missed, then place it on the overlay.")
+            }
+            .alert("Rename App", isPresented: $showRenamePrompt) {
+                TextField("App name", text: $renameAppName)
+                Button("Cancel", role: .cancel) {
+                    renameAppName = ""
+                    renameAppIndex = nil
+                }
+                Button("Save") {
+                    if let renameAppIndex {
+                        model.renameDetectedApp(index: renameAppIndex, name: renameAppName)
+                    }
+                    renameAppName = ""
+                    renameAppIndex = nil
+                }
+            } message: {
+                Text("Update the detected app name for this marker.")
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -444,6 +463,11 @@ struct MappingOverlayEditorView: View {
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
+                            Button {
+                                beginRename(index: index)
+                            } label: {
+                                Label("Rename", systemImage: "pencil")
+                            }
                             Button(role: .destructive) {
                                 model.removeDetectedApp(index: index)
                             } label: {
@@ -561,7 +585,11 @@ struct MappingOverlayEditorView: View {
         )
         .position(point)
         .onTapGesture {
-            selectedAppIndex = index
+            if selectedAppIndex == index {
+                beginRename(index: index)
+            } else {
+                selectedAppIndex = index
+            }
         }
         .gesture(
             DragGesture(minimumDistance: 6)
@@ -589,6 +617,15 @@ struct MappingOverlayEditorView: View {
             column: slot.column,
             type: slot.type
         )
+    }
+
+    private func beginRename(index: Int) {
+        guard model.detectedSlots.indices.contains(index) else {
+            return
+        }
+        renameAppIndex = index
+        renameAppName = model.detectedSlots[index].appName
+        showRenamePrompt = true
     }
 
     private func zoneBinding(for index: Int) -> Binding<MappingZone> {

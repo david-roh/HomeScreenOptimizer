@@ -256,6 +256,17 @@ final class RootViewModelTests: XCTestCase {
         XCTAssertEqual(model.detectedIconPreviewDataBySlot[expected], marker)
     }
 
+    func testRenameDetectedAppNormalizesUpdatedName() {
+        let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
+        model.detectedSlots = [
+            DetectedAppSlot(appName: "Unlabeled App 1", confidence: 0.4, slot: Slot(page: 0, row: 1, column: 1))
+        ]
+
+        model.renameDetectedApp(index: 0, name: "  Google maps  ")
+
+        XCTAssertEqual(model.detectedSlots[0].appName, "Maps")
+    }
+
     func testToggleWidgetLockRemovesMappedAppAtLockedCell() {
         let model = RootViewModel(ocrExtractor: StubLayoutExtractor())
         let slot = Slot(page: 0, row: 1, column: 1, type: .app)

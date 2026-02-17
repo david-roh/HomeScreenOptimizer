@@ -182,4 +182,28 @@ final class LayoutGridMapperTests: XCTestCase {
         XCTAssertEqual(detection.apps[0].appName, "Photos")
         XCTAssertFalse(detection.widgetLockedSlots.isEmpty)
     }
+
+    func testMapCalendarWidgetSignalLocksTwoByTwoArea() {
+        let mapper = HomeScreenGridMapper()
+        let input = [
+            LocatedOCRLabelCandidate(
+                text: "SUNDAY",
+                confidence: 0.96,
+                centerX: 0.20,
+                centerY: 0.83,
+                boxWidth: 0.16,
+                boxHeight: 0.05
+            )
+        ]
+
+        let detection = mapper.map(locatedCandidates: input, page: 0, rows: 6, columns: 4)
+        let expected = Set([
+            Slot(page: 0, row: 0, column: 0, type: .widgetLocked),
+            Slot(page: 0, row: 0, column: 1, type: .widgetLocked),
+            Slot(page: 0, row: 1, column: 0, type: .widgetLocked),
+            Slot(page: 0, row: 1, column: 1, type: .widgetLocked)
+        ])
+
+        XCTAssertTrue(expected.isSubset(of: Set(detection.widgetLockedSlots)))
+    }
 }

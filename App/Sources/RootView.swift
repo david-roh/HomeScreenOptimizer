@@ -66,7 +66,6 @@ struct RootView: View {
     @State private var showQuickStart = false
     @State private var quickStartPage = 0
     @State private var fineTuneMode: FineTuneMode = .weights
-    @State private var fineTuneDetent: PresentationDetent = .medium
     @AppStorage("hso_quick_start_seen_v2") private var quickStartSeen = false
 
     private enum Tab: String, CaseIterable {
@@ -214,7 +213,7 @@ struct RootView: View {
             .animation(.easeInOut(duration: 0.22), value: selectedTab)
         }
         .background(stageBackground(for: selectedTab).ignoresSafeArea())
-        .sheet(isPresented: $showTuneSheet) {
+        .fullScreenCover(isPresented: $showTuneSheet) {
             tuneSheet
         }
         .sheet(isPresented: $showQuickStart) {
@@ -600,7 +599,6 @@ struct RootView: View {
             HStack {
                 Button("Fine Tune") {
                     fineTuneMode = .weights
-                    fineTuneDetent = .medium
                     showTuneSheet = true
                 }
                 .buttonStyle(.bordered)
@@ -1157,13 +1155,7 @@ struct RootView: View {
                     }
                 }
             }
-            .onChange(of: fineTuneMode) { _, mode in
-                if mode == .calibration {
-                    fineTuneDetent = .large
-                }
-            }
         }
-        .presentationDetents([.medium, .large], selection: $fineTuneDetent)
     }
 
     private var quickStartSheet: some View {
@@ -2728,6 +2720,23 @@ final class RootViewModel: ObservableObject {
         showStatus("Removed \"\(removed.appName)\" from mapping.", level: .info)
     }
 
+    func renameDetectedApp(index: Int, name: String) {
+        guard detectedSlots.indices.contains(index) else {
+            return
+        }
+
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            showStatus("App name cannot be empty.", level: .info)
+            return
+        }
+
+        detectedSlots[index].appName = normalizeDetectedAppName(trimmed)
+        sortDetectedSlots()
+        hydrateUsageDraftFromDetectedApps()
+        showStatus("Renamed app to \"\(trimmed)\".", level: .success)
+    }
+
     func autoResolveConflicts(on page: Int) {
         let indices = detectedSlots.indices.filter { detectedSlots[$0].slot.page == page }
         guard !indices.isEmpty else {
@@ -2909,6 +2918,7 @@ final class RootViewModel: ObservableObject {
                     if lhs.row != rhs.row { return lhs.row < rhs.row }
                     return lhs.column < rhs.column
                 }
+            let inferredMissingCount = inferMissingSlotsFromIconOccupancy(pages: pages)
             detectedIconPreviewDataBySlot = buildDetectedIconPreviewMap(from: pages, slots: detectedSlots)
             originalDetectedSlots = detectedSlots
             originalWidgetLockedSlots = widgetLockedSlots
@@ -2920,7 +2930,7 @@ final class RootViewModel: ObservableObject {
                 let dockCount = detectedSlots.filter { $0.slot.type == .dock }.count
                 let widgetCount = widgetLockedSlots.count
                 showStatus(
-                    "Extracted \(ocrCandidates.count) labels and mapped \(detectedSlots.count) apps (\(dockCount) dock, \(widgetCount) widget cells).",
+                    "Extracted \(ocrCandidates.count) labels and mapped \(detectedSlots.count) apps (\(dockCount) dock, \(widgetCount) widget cells\(inferredMissingCount > 0 ? ", +\(inferredMissingCount) inferred" : "")).",
                     level: .success
                 )
             }
@@ -3514,6 +3524,292 @@ final class RootViewModel: ObservableObject {
         return resolved
     }
 
+    private func inferMissingSlotsFromIconOccupancy(
+        pages: [ScreenshotPage],
+        rows: Int = 6,
+        columns: Int = 4
+    ) -> Int {
+        guard rows > 0, columns > 0, !pages.isEmpty else {
+            return 0
+        }
+
+        var occupiedSlotIDs = Set(detectedSlots.map { slotIdentity($0.slot) })
+        var canonicalNames = Set(
+            detectedSlots
+                .map { canonicalAppName($0.appName) }
+                .filter { !$0.isEmpty }
+        )
+        var usageSuggestions = importedUsageEntries
+            .map(\.appName)
+            .filter { !canonicalNames.contains(canonicalAppName($0)) }
+        var inferredCount = 0
+        var unlabeledCounter = 1
+
+        for page in pages.sorted(by: { $0.pageIndex < $1.pageIndex }) {
+            guard let image = UIImage(contentsOfFile: page.filePath) else {
+                continue
+            }
+
+            let occupancy = likelyOccupiedSlots(
+                in: image,
+                page: page.pageIndex,
+                rows: rows,
+                columns: columns
+            )
+
+            for entry in occupancy {
+                let slot = entry.slot
+                guard !occupiedSlotIDs.contains(slotIdentity(slot)) else {
+                    continue
+                }
+                if slot.type == .app, isWidgetLocked(slot) {
+                    continue
+                }
+
+                let candidateName: String
+                if !usageSuggestions.isEmpty {
+                    candidateName = usageSuggestions.removeFirst()
+                } else if slot.type == .dock {
+                    candidateName = "Dock App \(unlabeledCounter)"
+                    unlabeledCounter += 1
+                } else {
+                    candidateName = "Unlabeled App \(unlabeledCounter)"
+                    unlabeledCounter += 1
+                }
+
+                let normalizedName = normalizeDetectedAppName(candidateName)
+                let canonical = canonicalAppName(normalizedName)
+                if !canonical.isEmpty, canonicalNames.contains(canonical) {
+                    continue
+                }
+
+                if !canonical.isEmpty {
+                    canonicalNames.insert(canonical)
+                }
+                occupiedSlotIDs.insert(slotIdentity(slot))
+                detectedSlots.append(
+                    DetectedAppSlot(
+                        appName: normalizedName,
+                        confidence: min(max(entry.score, 0.22), 0.58),
+                        slot: slot
+                    )
+                )
+                inferredCount += 1
+            }
+        }
+
+        if inferredCount > 0 {
+            sortDetectedSlots()
+        }
+        return inferredCount
+    }
+
+    private func likelyOccupiedSlots(
+        in image: UIImage,
+        page: Int,
+        rows: Int,
+        columns: Int
+    ) -> [(slot: Slot, score: Double)] {
+        guard let cgImage = image.cgImage else {
+            return []
+        }
+
+        let imageWidth = CGFloat(cgImage.width)
+        let imageHeight = CGFloat(cgImage.height)
+        var appScores: [(slot: Slot, score: Double)] = []
+        var dockScores: [(slot: Slot, score: Double)] = []
+
+        for row in 0..<rows {
+            for column in 0..<columns {
+                let slot = Slot(page: page, row: row, column: column, type: .app)
+                guard let score = occupancyScore(
+                    for: slot,
+                    in: cgImage,
+                    imageWidth: imageWidth,
+                    imageHeight: imageHeight,
+                    rows: rows,
+                    columns: columns
+                ) else {
+                    continue
+                }
+                appScores.append((slot: slot, score: score))
+            }
+        }
+
+        for column in 0..<columns {
+            let slot = Slot(page: page, row: 0, column: column, type: .dock)
+            guard let score = occupancyScore(
+                for: slot,
+                in: cgImage,
+                imageWidth: imageWidth,
+                imageHeight: imageHeight,
+                rows: rows,
+                columns: columns
+            ) else {
+                continue
+            }
+            dockScores.append((slot: slot, score: score))
+        }
+
+        let appThreshold = occupancyThreshold(
+            scores: appScores.map(\.score),
+            minimum: 0.225,
+            sigmaScale: 0.95
+        )
+        let dockThreshold = occupancyThreshold(
+            scores: dockScores.map(\.score),
+            minimum: 0.210,
+            sigmaScale: 0.85
+        )
+
+        var selected = appScores
+            .filter { $0.score >= appThreshold }
+            .map { (slot: $0.slot, score: $0.score) }
+        selected.append(
+            contentsOf: dockScores
+                .filter { $0.score >= dockThreshold }
+                .map { (slot: $0.slot, score: $0.score) }
+        )
+
+        return selected.sorted { lhs, rhs in
+            if lhs.slot.type != rhs.slot.type {
+                return lhs.slot.type == .app
+            }
+            if lhs.slot.page != rhs.slot.page {
+                return lhs.slot.page < rhs.slot.page
+            }
+            if lhs.slot.row != rhs.slot.row {
+                return lhs.slot.row < rhs.slot.row
+            }
+            return lhs.slot.column < rhs.slot.column
+        }
+    }
+
+    private func occupancyScore(
+        for slot: Slot,
+        in image: CGImage,
+        imageWidth: CGFloat,
+        imageHeight: CGFloat,
+        rows: Int,
+        columns: Int
+    ) -> Double? {
+        guard let rawRect = iconCropRectForSlot(
+            slot: slot,
+            imageWidth: imageWidth,
+            imageHeight: imageHeight,
+            rows: rows,
+            columns: columns
+        ) else {
+            return nil
+        }
+
+        let imageBounds = CGRect(x: 0, y: 0, width: imageWidth, height: imageHeight)
+        let cropRect = rawRect.integral.intersection(imageBounds)
+        guard !cropRect.isNull, cropRect.width > 8, cropRect.height > 8,
+              let crop = image.cropping(to: cropRect) else {
+            return nil
+        }
+        return occupancyScore(for: crop)
+    }
+
+    private func occupancyScore(for crop: CGImage) -> Double? {
+        let sampleWidth = 44
+        let sampleHeight = 44
+        let bytesPerPixel = 4
+        let bytesPerRow = sampleWidth * bytesPerPixel
+        var pixels = [UInt8](repeating: 0, count: sampleWidth * sampleHeight * bytesPerPixel)
+
+        guard let context = CGContext(
+            data: &pixels,
+            width: sampleWidth,
+            height: sampleHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else {
+            return nil
+        }
+
+        context.interpolationQuality = .medium
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: sampleWidth, height: sampleHeight))
+
+        var luminance = [Double](repeating: 0, count: sampleWidth * sampleHeight)
+        var sumL = 0.0
+        var sumL2 = 0.0
+        var sumR = 0.0
+        var sumG = 0.0
+        var sumB = 0.0
+        var sumR2 = 0.0
+        var sumG2 = 0.0
+        var sumB2 = 0.0
+        var sumSaturation = 0.0
+
+        for idx in 0..<(sampleWidth * sampleHeight) {
+            let base = idx * bytesPerPixel
+            let r = Double(pixels[base]) / 255.0
+            let g = Double(pixels[base + 1]) / 255.0
+            let b = Double(pixels[base + 2]) / 255.0
+            let l = (0.2126 * r) + (0.7152 * g) + (0.0722 * b)
+            luminance[idx] = l
+
+            let maxChannel = max(r, max(g, b))
+            let minChannel = min(r, min(g, b))
+            let saturation = maxChannel > 0 ? (maxChannel - minChannel) / maxChannel : 0
+
+            sumL += l
+            sumL2 += l * l
+            sumR += r
+            sumG += g
+            sumB += b
+            sumR2 += r * r
+            sumG2 += g * g
+            sumB2 += b * b
+            sumSaturation += saturation
+        }
+
+        let count = Double(sampleWidth * sampleHeight)
+        guard count > 0 else {
+            return nil
+        }
+
+        let meanL = sumL / count
+        let varianceL = max(0, (sumL2 / count) - (meanL * meanL))
+        let varianceR = max(0, (sumR2 / count) - pow(sumR / count, 2))
+        let varianceG = max(0, (sumG2 / count) - pow(sumG / count, 2))
+        let varianceB = max(0, (sumB2 / count) - pow(sumB / count, 2))
+        let colorVariance = (varianceR + varianceG + varianceB) / 3.0
+        let meanSaturation = sumSaturation / count
+
+        var edge = 0.0
+        var edgeCount = 0
+        for row in 0..<(sampleHeight - 1) {
+            for column in 0..<(sampleWidth - 1) {
+                let index = (row * sampleWidth) + column
+                edge += abs(luminance[index] - luminance[index + 1])
+                edge += abs(luminance[index] - luminance[index + sampleWidth])
+                edgeCount += 2
+            }
+        }
+        let meanEdge = edgeCount > 0 ? edge / Double(edgeCount) : 0
+
+        return (meanEdge * 0.64) + (colorVariance * 0.95) + (varianceL * 0.44) + (meanSaturation * 0.28)
+    }
+
+    private func occupancyThreshold(scores: [Double], minimum: Double, sigmaScale: Double) -> Double {
+        guard !scores.isEmpty else {
+            return .greatestFiniteMagnitude
+        }
+
+        let mean = scores.reduce(0, +) / Double(scores.count)
+        let variance = scores.reduce(0) { partial, score in
+            let delta = score - mean
+            return partial + (delta * delta)
+        } / Double(scores.count)
+        let sigma = sqrt(max(variance, 0))
+        return max(minimum, mean + (sigma * sigmaScale))
+    }
+
     private func buildDetectedIconPreviewMap(
         from pages: [ScreenshotPage],
         slots: [DetectedAppSlot],
@@ -3615,6 +3911,22 @@ final class RootViewModel: ObservableObject {
         rows: Int,
         columns: Int
     ) -> CGRect? {
+        iconCropRectForSlot(
+            slot: detected.slot,
+            imageWidth: imageWidth,
+            imageHeight: imageHeight,
+            rows: rows,
+            columns: columns
+        )
+    }
+
+    private func iconCropRectForSlot(
+        slot: Slot,
+        imageWidth: CGFloat,
+        imageHeight: CGFloat,
+        rows: Int,
+        columns: Int
+    ) -> CGRect? {
         guard rows > 0, columns > 0 else {
             return nil
         }
@@ -3625,21 +3937,21 @@ final class RootViewModel: ObservableObject {
         let appCellHeight = appGridHeight / CGFloat(rows)
         let appCellWidth = imageWidth / CGFloat(columns)
 
-        if detected.slot.type == .dock {
+        if slot.type == .dock {
             let dockTop = imageHeight * 0.84
             let dockHeight = imageHeight * 0.12
             let iconSide = min(appCellWidth * 0.70, dockHeight * 0.74)
             return CGRect(
-                x: CGFloat(detected.slot.column) * appCellWidth + (appCellWidth - iconSide) / 2,
+                x: CGFloat(slot.column) * appCellWidth + (appCellWidth - iconSide) / 2,
                 y: dockTop + (dockHeight - iconSide) / 2,
                 width: iconSide,
                 height: iconSide
             )
         }
 
-        let rowFromTop = max(0, min(rows - 1, detected.slot.row))
+        let rowFromTop = max(0, min(rows - 1, slot.row))
         return CGRect(
-            x: CGFloat(detected.slot.column) * appCellWidth + (appCellWidth * 0.14),
+            x: CGFloat(slot.column) * appCellWidth + (appCellWidth * 0.14),
             y: appGridTop + CGFloat(rowFromTop) * appCellHeight + (appCellHeight * 0.06),
             width: appCellWidth * 0.72,
             height: appCellHeight * 0.62
