@@ -552,8 +552,8 @@ struct RootView: View {
                     .font(.subheadline.weight(.semibold))
                 LazyVGrid(
                     columns: [
-                        GridItem(.flexible(minimum: 120), spacing: 8),
-                        GridItem(.flexible(minimum: 120), spacing: 8)
+                        GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 8),
+                        GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 8)
                     ],
                     spacing: 8
                 ) {
@@ -635,6 +635,7 @@ struct RootView: View {
                     }
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("open-fine-tune")
 
                 Spacer()
 
@@ -1093,7 +1094,7 @@ struct RootView: View {
     private var fineTuneOverlay: some View {
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
-                Color.black.opacity(0.22)
+                Color.black.opacity(0.38)
                     .ignoresSafeArea()
                     .onTapGesture {
                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -1103,7 +1104,7 @@ struct RootView: View {
 
                 tuneSheet
                     .frame(maxWidth: .infinity)
-                    .frame(height: min(max(360, proxy.size.height * 0.52), 430))
+                    .frame(height: min(max(320, proxy.size.height * 0.46), 390))
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -1135,6 +1136,7 @@ struct RootView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Tab.setup.accent)
+                .accessibilityIdentifier("fine-tune-done")
             }
 
             Picker("Fine Tune", selection: $fineTuneMode) {
@@ -1217,6 +1219,7 @@ struct RootView: View {
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 12)
+        .accessibilityIdentifier("fine-tune-sheet")
         .onDisappear {
             syncPresetFromModelWeights()
         }
@@ -1353,11 +1356,11 @@ struct RootView: View {
             .pickerStyle(.menu)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
-            .padding(.vertical, 8)
-            .frame(minHeight: 40)
+            .padding(.vertical, 7)
+            .frame(minHeight: 38)
             .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
-        .frame(minHeight: 66, alignment: .top)
+        .frame(minHeight: 64, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -1382,18 +1385,17 @@ struct RootView: View {
         return Button {
             applyPreset(preset)
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
                 Label(preset.title, systemImage: preset.iconName)
                     .font(.subheadline.weight(.semibold))
-                Text(preset.shortDescription)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .minimumScaleFactor(0.85)
+                Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(minHeight: 52, alignment: .topLeading)
-            .padding(10)
+            .frame(minHeight: 44, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .background(
                 isSelected ? Tab.setup.accent.opacity(0.16) : Color(.tertiarySystemFill),
                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -3681,11 +3683,7 @@ final class RootViewModel: ObservableObject {
                 .map { canonicalAppName($0.appName) }
                 .filter { !$0.isEmpty }
         )
-        var usageSuggestions = importedUsageEntries
-            .map(\.appName)
-            .filter { !canonicalNames.contains(canonicalAppName($0)) }
         var inferredCount = 0
-        var unlabeledCounter = 1
         var usedLocatedLabelIDs: Set<String> = []
         let topRowsLikelyWidgetByPage = likelyTopRowsWidgetState(rows: rows, columns: columns)
 
@@ -3761,7 +3759,7 @@ final class RootViewModel: ObservableObject {
                 if candidateName == nil, slot.type == .app {
                     let canUseIconClassifier = !isTopWidgetZone && (slot.row >= 2 || hasLabelEvidence || !topRowsLikelyWidgets)
                     if canUseIconClassifier {
-                        let minimumConfidence = slot.row <= 1 ? 0.34 : 0.18
+                        let minimumConfidence = slot.row <= 1 ? 0.52 : 0.38
                         candidateName = classifyAppIconHint(
                             for: slot,
                             in: cgImage,
@@ -3777,33 +3775,13 @@ final class RootViewModel: ObservableObject {
                         for: slot,
                         in: cgImage,
                         rows: rows,
-                        columns: columns
+                        columns: columns,
+                        minimumConfidence: 0.52
                     )
                 }
 
-                if candidateName == nil,
-                   !usageSuggestions.isEmpty,
-                   (slot.type != .app || (!isTopWidgetZone && !conservativeAppInference)) {
-                    candidateName = usageSuggestions.removeFirst()
-                }
-
                 if candidateName == nil {
-                    if slot.type == .dock {
-                        continue
-                    }
-                    if isTopWidgetZone {
-                        continue
-                    }
-                    if conservativeAppInference {
-                        continue
-                    }
-                    let lowConfidenceTopRow = slot.row <= 1 && entry.score < 0.48
-                    let lowConfidenceAnyRow = entry.score < 0.24
-                    if lowConfidenceTopRow || lowConfidenceAnyRow {
-                        continue
-                    }
-                    candidateName = "Unlabeled \(unlabeledCounter)"
-                    unlabeledCounter += 1
+                    continue
                 }
 
                 let normalizedName = normalizeDetectedAppName(candidateName ?? "")
@@ -3835,6 +3813,11 @@ final class RootViewModel: ObservableObject {
     }
 
     private func removeLikelyWidgetNoiseCandidates() {
+        var topWidgetSignalByPage: [Int: Bool] = [:]
+        for slot in widgetLockedSlots where slot.row <= 1 {
+            topWidgetSignalByPage[slot.page, default: false] = true
+        }
+
         let lowerGridNames = Set(
             detectedSlots
                 .filter { $0.slot.type == .app && $0.slot.row >= 2 }
@@ -3852,6 +3835,9 @@ final class RootViewModel: ObservableObject {
                 return false
             }
             if isWidgetLocked(detected.slot) {
+                return true
+            }
+            if detected.slot.row <= 1, topWidgetSignalByPage[detected.slot.page] == true {
                 return true
             }
             if isLikelyWidgetNoiseName(canonical) {
@@ -3997,7 +3983,7 @@ final class RootViewModel: ObservableObject {
             return true
         }
         let fragments = [
-            "weather", "calendar widget", "batteries", "screen time", "reminders due", "event"
+            "weather", "calendar widget", "batteries", "screen time", "reminders due", "event", "search"
         ]
         return fragments.contains(where: { key.contains($0) })
     }
@@ -4286,7 +4272,8 @@ final class RootViewModel: ObservableObject {
         for slot: Slot,
         in image: CGImage,
         rows: Int,
-        columns: Int
+        columns: Int,
+        minimumConfidence: Double = 0.16
     ) -> String? {
 #if canImport(Vision)
         guard slot.type == .dock,
@@ -4306,12 +4293,13 @@ final class RootViewModel: ObservableObject {
               let crop = image.cropping(to: cropRect) else {
             return nil
         }
-        return classifyIconHint(from: crop, minimumConfidence: 0.16)
+        return classifyIconHint(from: crop, minimumConfidence: minimumConfidence)
 #else
         _ = slot
         _ = image
         _ = rows
         _ = columns
+        _ = minimumConfidence
         return nil
 #endif
     }

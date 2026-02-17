@@ -57,6 +57,13 @@ struct HomeScreenLayoutPreviewView: View {
         previewModel.assignments(on: selectedPage, phase: .recommended, movedOnly: showMovedOnly)
     }
 
+    private var pageBackgroundImage: UIImage? {
+        guard let page = model.importSession?.pages.first(where: { $0.pageIndex == selectedPage }) else {
+            return nil
+        }
+        return UIImage(contentsOfFile: page.filePath)
+    }
+
     private var suggestedDockAppIDs: [UUID] {
         let recommendedHasDock = model.recommendedLayoutAssignments.contains { assignment in
             assignment.slot.page == selectedPage && assignment.slot.type == .dock
@@ -88,6 +95,7 @@ struct HomeScreenLayoutPreviewView: View {
                             columns: columns,
                             appName: model.displayName(for:),
                             iconData: model.previewIconData(for:),
+                            backgroundImage: pageBackgroundImage,
                             suggestedDockAppIDs: []
                         )
                     case .recommended:
@@ -101,6 +109,7 @@ struct HomeScreenLayoutPreviewView: View {
                             columns: columns,
                             appName: model.displayName(for:),
                             iconData: model.previewIconData(for:),
+                            backgroundImage: pageBackgroundImage,
                             suggestedDockAppIDs: suggestedDockAppIDs
                         )
                     case .transition:
@@ -231,6 +240,7 @@ private struct PhoneLayoutCanvas: View {
     let columns: Int
     let appName: (UUID) -> String
     let iconData: (UUID) -> Data?
+    let backgroundImage: UIImage?
     let suggestedDockAppIDs: [UUID]
 
     private var gridAssignments: [LayoutAssignment] {
@@ -265,18 +275,50 @@ private struct PhoneLayoutCanvas: View {
                 let dockCellWidth = dockRect.width / CGFloat(columns)
 
                 ZStack {
-                    RoundedRectangle(cornerRadius: 34, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(.systemBackground), Color(.secondarySystemBackground)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                    RoundedRectangle(cornerRadius: 38, style: .continuous)
+                        .fill(Color.black.opacity(0.90))
+
+                    RoundedRectangle(cornerRadius: 32, style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
+                        .padding(4)
+                        .overlay(
+                            Group {
+                                if let backgroundImage {
+                                    Image(uiImage: backgroundImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .blur(radius: 16)
+                                        .saturation(0.84)
+                                        .overlay(Color.white.opacity(0.20))
+                                        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+                                        .padding(8)
+                                } else {
+                                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [
+                                                    Color(red: 0.80, green: 0.90, blue: 0.98),
+                                                    Color(red: 0.72, green: 0.84, blue: 0.96),
+                                                    Color(red: 0.86, green: 0.90, blue: 0.98)
+                                                ],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .padding(8)
+                                }
+                            }
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 34, style: .continuous)
-                                .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                                .stroke(Color.white.opacity(0.42), lineWidth: 0.7)
+                                .padding(4)
                         )
+
+                    Capsule()
+                        .fill(Color.black)
+                        .frame(width: frame.width * 0.28, height: 18)
+                        .position(x: frame.midX, y: frame.height * 0.06)
 
                     ForEach(widgetLockedSlots, id: \.self) { slot in
                         let x = (CGFloat(slot.column) + 0.5) * cellWidth

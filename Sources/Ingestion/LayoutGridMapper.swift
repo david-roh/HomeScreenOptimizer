@@ -193,6 +193,9 @@ public struct HomeScreenGridMapper: Sendable {
         guard !ignoredSubstrings.contains(where: { lowered.contains($0) }) else {
             return false
         }
+        if lowered.contains("search") {
+            return false
+        }
         guard lowered.range(of: #"^\d{1,2}$"#, options: .regularExpression) == nil else {
             return false
         }

@@ -268,4 +268,30 @@ final class LayoutGridMapperTests: XCTestCase {
         XCTAssertTrue(names.contains("Fitness"))
         XCTAssertTrue(names.contains("Contacts"))
     }
+
+    func testMapFiltersSearchPillVariants() {
+        let mapper = HomeScreenGridMapper()
+        let input = [
+            LocatedOCRLabelCandidate(
+                text: "Q Search",
+                confidence: 0.98,
+                centerX: 0.50,
+                centerY: 0.18,
+                boxWidth: 0.14,
+                boxHeight: 0.02
+            ),
+            LocatedOCRLabelCandidate(
+                text: "Files",
+                confidence: 0.95,
+                centerX: 0.84,
+                centerY: 0.81,
+                boxWidth: 0.08,
+                boxHeight: 0.02
+            )
+        ]
+
+        let detection = mapper.map(locatedCandidates: input, page: 0, rows: 6, columns: 4)
+        XCTAssertEqual(detection.apps.count, 1)
+        XCTAssertEqual(detection.apps.first?.appName, "Files")
+    }
 }
