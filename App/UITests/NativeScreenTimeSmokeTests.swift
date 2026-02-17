@@ -11,7 +11,7 @@ final class NativeScreenTimeSmokeTests: XCTestCase {
         app.launchArguments.append("-uitesting-unlock-tabs")
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["HomeScreenOptimizer"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["bottom-primary-action"].waitForExistence(timeout: 8))
         app.tabBars.buttons["Plan"].tap()
 
         let connectButton = app.buttons["Connect Screen Time"]

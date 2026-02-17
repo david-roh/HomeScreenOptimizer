@@ -211,8 +211,7 @@ struct RootView: View {
                     Label(Tab.apply.title, systemImage: tabBarIcon(for: .apply))
                 }
             }
-            .navigationTitle("HomeScreenOptimizer")
-            .toolbarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             .fontDesign(.rounded)
             .animation(.easeInOut(duration: 0.22), value: selectedTab)
         }
@@ -365,63 +364,50 @@ struct RootView: View {
     }
 
     private func stageHeader(for tab: Tab) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Label("Step \(tabStepIndex(tab))/4", systemImage: tab.icon)
+                Text("Layout Pilot")
                     .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(.white.opacity(0.16), in: Capsule())
+                    .foregroundStyle(.secondary)
 
                 Spacer()
 
+                Label("Step \(tabStepIndex(tab))/4", systemImage: tab.icon)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(tab.accent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(tab.accent.opacity(0.14), in: Capsule())
+            }
+
+            HStack(alignment: .firstTextBaseline) {
+                Text(tab.headline)
+                    .font(.headline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
                 Text("\(Int((stageCompletion(for: tab) * 100).rounded()))%")
                     .font(.caption.weight(.semibold))
                     .monospacedDigit()
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(.white.opacity(0.16), in: Capsule())
+                    .foregroundStyle(.secondary)
             }
 
-            Text(tab.headline)
-                .font(.system(.title3, design: .rounded).weight(.semibold))
-
             ProgressView(value: stageCompletion(for: tab))
-                .tint(.white)
+                .tint(tab.accent)
 
             if let blocker = stageShortHint(for: tab), isPrimaryActionDisabled(for: tab) {
                 Text(blocker)
                     .font(.caption2)
-                    .foregroundStyle(Color.white.opacity(0.85))
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
         }
-        .padding(12)
-        .background {
-            ZStack {
-                LinearGradient(
-                    colors: [tab.accent, tab.accent.opacity(0.70)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-
-                Circle()
-                    .fill(.white.opacity(0.16))
-                    .frame(width: 96, height: 96)
-                    .offset(x: 108, y: -52)
-
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(.white.opacity(0.06))
-                    .rotationEffect(.degrees(-12))
-                    .offset(x: -100, y: 26)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(.white.opacity(0.22), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(tab.accent.opacity(0.24), lineWidth: 1)
         )
-        .shadow(color: tab.accent.opacity(0.22), radius: 10, x: 0, y: 5)
     }
 
     private func reachableActionRail(for tab: Tab) -> some View {
