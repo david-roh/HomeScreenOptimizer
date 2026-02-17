@@ -388,9 +388,11 @@ struct RootView: View {
     }
 
     private func stageHeader(for tab: Tab) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        let voice = stageVoice(for: tab)
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Layout Pilot")
+                Label(voice.badge, systemImage: voice.icon)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
@@ -404,7 +406,7 @@ struct RootView: View {
                     .background(tab.accent.opacity(0.14), in: Capsule())
             }
 
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .top) {
                 Text(tab.headline)
                     .font(.headline.weight(.semibold))
                     .lineLimit(2)
@@ -416,13 +418,25 @@ struct RootView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Text(voice.prompt)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
             ProgressView(value: stageCompletion(for: tab))
                 .tint(tab.accent)
 
             if let blocker = stageShortHint(for: tab), isPrimaryActionDisabled(for: tab) {
-                Text(blocker)
-                    .font(.caption2)
+                Label(blocker, systemImage: "exclamationmark.circle")
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Label("Next: \(primaryActionLabel(for: tab))", systemImage: "arrow.right.circle.fill")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(tab.accent)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -434,6 +448,19 @@ struct RootView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(tab.accent.opacity(0.24), lineWidth: 1)
         )
+    }
+
+    private func stageVoice(for tab: Tab) -> (badge: String, icon: String, prompt: String) {
+        switch tab {
+        case .setup:
+            return ("Flow Coach", "sparkles", "Tell me how you hold your phone so every recommendation matches your real reach.")
+        case .importData:
+            return ("Spatial Capture", "viewfinder", "Add a clean screenshot and verify quick mappings before planning.")
+        case .plan:
+            return ("Decision Engine", "brain.head.profile", "Blend usage + reachability + style into a practical rearrangement plan.")
+        case .apply:
+            return ("Action Checklist", "checkmark.seal", "Apply one move at a time with confidence, and stop when it already feels right.")
+        }
     }
 
     private func reachableActionRail(for tab: Tab) -> some View {
@@ -487,7 +514,7 @@ struct RootView: View {
     }
 
     private var setupCard: some View {
-        card(title: "Profile") {
+        card(title: "Grip Profile") {
             if !model.savedProfiles.isEmpty {
                 HStack(spacing: 10) {
                     Menu {
@@ -666,7 +693,7 @@ struct RootView: View {
     }
 
     private var importCard: some View {
-        card(title: "Screens") {
+        card(title: "Screen Capture") {
             if model.importSession == nil {
                 Button("Start Import Session") {
                     model.startOrResetSession()
@@ -803,7 +830,7 @@ struct RootView: View {
     }
 
     private var planCard: some View {
-        card(title: "Plan") {
+        card(title: "Recommendation Plan") {
             HStack(spacing: 8) {
                 metricPill(title: "Profile", value: model.activeProfileName ?? "None")
                 metricPill(title: "Detected", value: "\(model.detectedSlots.count)")
@@ -1026,7 +1053,7 @@ struct RootView: View {
     }
 
     private var applyCard: some View {
-        card(title: "Checklist") {
+        card(title: "Apply Checklist") {
             if model.moveSteps.isEmpty {
                 EmptyStateRow(icon: "checklist.unchecked", text: "Generate a plan first.")
             } else {
