@@ -35,6 +35,35 @@ final class GuidedFlowSmokeTests: XCTestCase {
         XCTAssertFalse(app.buttons["Speed"].exists)
     }
 
+    func testSetupIntentGridIsFullyVisibleAndHittable() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uitesting-unlock-tabs"]
+        app.launch()
+
+        let context = app.buttons["setup-context-picker"]
+        let hand = app.buttons["setup-hand-picker"]
+        let grip = app.buttons["setup-grip-picker"]
+
+        XCTAssertTrue(context.waitForExistence(timeout: 5))
+        XCTAssertTrue(hand.exists)
+        XCTAssertTrue(grip.exists)
+
+        let balanced = app.buttons["intent-card-balanced"]
+        let reach = app.buttons["intent-card-reachFirst"]
+        let visual = app.buttons["intent-card-visualHarmony"]
+        let stable = app.buttons["intent-card-minimalDisruption"]
+
+        XCTAssertTrue(balanced.exists)
+        XCTAssertTrue(reach.exists)
+        XCTAssertTrue(visual.exists)
+        XCTAssertTrue(stable.exists)
+
+        XCTAssertTrue(balanced.isHittable)
+        XCTAssertTrue(reach.isHittable)
+        XCTAssertTrue(visual.isHittable)
+        XCTAssertTrue(stable.isHittable)
+    }
+
     func testEditMappingsOpensOverlayEditor() {
         let app = XCUIApplication()
         app.launchArguments += ["-uitesting-unlock-tabs", "-uitesting-seed-flow"]
@@ -90,5 +119,11 @@ final class GuidedFlowSmokeTests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Final Layout Preview"].waitForExistence(timeout: 4))
         XCTAssertTrue(app.switches["preview-moved-only-toggle"].exists)
+
+        XCTAssertTrue(app.segmentedControls.buttons["Current"].exists)
+        XCTAssertTrue(app.segmentedControls.buttons["Recommended"].exists)
+        XCTAssertTrue(app.segmentedControls.buttons["Transition"].exists)
+        app.segmentedControls.buttons["Transition"].tap()
+        XCTAssertTrue(app.buttons["Animate"].waitForExistence(timeout: 2))
     }
 }

@@ -113,6 +113,7 @@ struct MappingOverlayEditorView: View {
     @State private var renameAppIndex: Int?
     @State private var renameAppName = ""
     @State private var showRenamePrompt = false
+    @State private var markerFilter: MarkerFilter = .review
 
     private enum MappingZone: String, CaseIterable, Identifiable {
         case grid
@@ -125,6 +126,22 @@ struct MappingOverlayEditorView: View {
                 return "Grid"
             case .dock:
                 return "Dock"
+            }
+        }
+    }
+
+    private enum MarkerFilter: String, CaseIterable, Identifiable {
+        case review
+        case all
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .review:
+                return "Review"
+            case .all:
+                return "All"
             }
         }
     }
@@ -174,6 +191,23 @@ struct MappingOverlayEditorView: View {
         })
     }
 
+    private var reviewIndicesOnSelectedPage: [Int] {
+        indicesOnSelectedPage.filter { index in
+            let detected = model.detectedSlots[index]
+            let name = detected.appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return detected.confidence < 0.72
+                || name.hasPrefix("unlabeled")
+                || conflictSlotsOnSelectedPage.contains(detected.slot)
+        }
+    }
+
+    private var visibleIndicesOnSelectedPage: [Int] {
+        if markerFilter == .all {
+            return indicesOnSelectedPage
+        }
+        return reviewIndicesOnSelectedPage.isEmpty ? indicesOnSelectedPage : reviewIndicesOnSelectedPage
+    }
+
     private var widgetSlotsOnSelectedPage: [Slot] {
         model.widgetLockedSlots.filter { $0.page == selectedPage }
     }
@@ -181,27 +215,40 @@ struct MappingOverlayEditorView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
-                HStack(spacing: 10) {
+                VStack(spacing: 8) {
                     Picker("Mode", selection: $showListMode) {
                         Text("Overlay").tag(false)
                         Text("List").tag(true)
                     }
                     .pickerStyle(.segmented)
 
-                    Picker("Page", selection: $selectedPage) {
-                        ForEach(pageIndices, id: \.self) { page in
-                            Text("Page \(page + 1)").tag(page)
+                    if !showListMode {
+                        Picker("Markers", selection: $markerFilter) {
+                            ForEach(MarkerFilter.allCases) { filter in
+                                Text(filter.title).tag(filter)
+                            }
                         }
+                        .pickerStyle(.segmented)
                     }
-                    .pickerStyle(.menu)
 
-                    Button {
-                        widgetLockMode.toggle()
-                    } label: {
-                        Label(widgetLockMode ? "Widgets On" : "Widgets", systemImage: widgetLockMode ? "square.grid.2x2.fill" : "square.grid.2x2")
-                            .font(.caption.weight(.semibold))
+                    HStack {
+                        Picker("Page", selection: $selectedPage) {
+                            ForEach(pageIndices, id: \.self) { page in
+                                Text("Page \(page + 1)").tag(page)
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        Spacer()
+
+                        Button {
+                            widgetLockMode.toggle()
+                        } label: {
+                            Label(widgetLockMode ? "Widgets On" : "Widgets", systemImage: widgetLockMode ? "square.grid.2x2.fill" : "square.grid.2x2")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
                 }
 
                 if !conflictSlotsOnSelectedPage.isEmpty {
@@ -332,7 +379,7 @@ struct MappingOverlayEditorView: View {
                     if imageRect.width > 0, imageRect.height > 0 {
                         gridLayer(in: imageRect)
 
-                        ForEach(indicesOnSelectedPage, id: \.self) { index in
+                        ForEach(visibleIndicesOnSelectedPage, id: \.self) { index in
                             markerView(index: index, in: imageRect)
                         }
 
@@ -442,7 +489,7 @@ struct MappingOverlayEditorView: View {
                     }
                     .buttonStyle(.plain)
 
-                    ForEach(indicesOnSelectedPage, id: \.self) { index in
+                    ForEach(visibleIndicesOnSelectedPage, id: \.self) { index in
                         let detected = model.detectedSlots[index]
                         Button {
                             selectedAppIndex = index

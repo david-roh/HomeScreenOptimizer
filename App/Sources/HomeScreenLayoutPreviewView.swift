@@ -9,9 +9,29 @@ struct HomeScreenLayoutPreviewView: View {
     @State private var selectedPage = 0
     @State private var showMovedOnly = false
     @State private var transitionProgress = 0.0
+    @State private var mode: PreviewMode = .recommended
 
     private let rows = 6
     private let columns = 4
+
+    private enum PreviewMode: String, CaseIterable, Identifiable {
+        case current
+        case recommended
+        case transition
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .current:
+                return "Current"
+            case .recommended:
+                return "Recommended"
+            case .transition:
+                return "Transition"
+            }
+        }
+    }
 
     private var previewModel: PreviewLayoutModel {
         PreviewLayoutModel(
@@ -44,26 +64,23 @@ struct HomeScreenLayoutPreviewView: View {
         return recommendedHasDock ? [] : model.recommendedDockAppIDs
     }
 
+    private var movedNames: [String] {
+        movedAppIDs
+            .map(model.displayName(for:))
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    HStack(spacing: 10) {
-                        Picker("Page", selection: $selectedPage) {
-                            ForEach(pageIndices, id: \.self) { page in
-                                Text("Page \(page + 1)").tag(page)
-                            }
-                        }
-                        .pickerStyle(.menu)
+                    controlsCard
 
-                        Toggle("Moved Only", isOn: $showMovedOnly)
-                            .toggleStyle(.switch)
-                            .accessibilityIdentifier("preview-moved-only-toggle")
-                    }
-
-                    HStack(spacing: 12) {
+                    switch mode {
+                    case .current:
                         PhoneLayoutCanvas(
-                            title: "Current",
+                            title: "Current Layout",
+                            subtitle: "What your imported screen currently represents.",
                             assignments: beforeAssignments,
                             widgetLockedSlots: previewModel.widgetLockedSlots.filter { $0.page == selectedPage },
                             movedAppIDs: movedAppIDs,
@@ -73,9 +90,10 @@ struct HomeScreenLayoutPreviewView: View {
                             iconData: model.previewIconData(for:),
                             suggestedDockAppIDs: []
                         )
-
+                    case .recommended:
                         PhoneLayoutCanvas(
-                            title: "Recommended",
+                            title: "Recommended Layout",
+                            subtitle: "Where the optimizer wants each app after reordering.",
                             assignments: afterAssignments,
                             widgetLockedSlots: previewModel.widgetLockedSlots.filter { $0.page == selectedPage },
                             movedAppIDs: movedAppIDs,
@@ -85,58 +103,19 @@ struct HomeScreenLayoutPreviewView: View {
                             iconData: model.previewIconData(for:),
                             suggestedDockAppIDs: suggestedDockAppIDs
                         )
+                    case .transition:
+                        transitionCard
                     }
 
-                    if !suggestedDockAppIDs.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Recommended Dock")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    ForEach(suggestedDockAppIDs, id: \.self) { appID in
-                                        Label(model.displayName(for: appID), systemImage: "dock.rectangle")
-                                            .font(.caption.weight(.semibold))
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 6)
-                                            .background(Color(.tertiarySystemFill), in: Capsule())
-                                    }
-                                }
-                            }
-                        }
+                    if !movedNames.isEmpty {
+                        movedAppsCard
                     }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("Transition")
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Button("Animate") {
-                                withAnimation(.easeInOut(duration: 0.6)) {
-                                    transitionProgress = transitionProgress < 0.5 ? 1 : 0
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                        }
-
-                        TransitionLayoutCanvas(
-                            progress: transitionProgress,
-                            current: beforeAssignments,
-                            recommended: afterAssignments,
-                            rows: rows,
-                            columns: columns,
-                            appName: model.displayName(for:),
-                            iconData: model.previewIconData(for:)
-                        )
-
-                        Slider(value: $transitionProgress, in: 0...1)
-                    }
-                    .padding(12)
-                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .padding(16)
             }
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Final Layout Preview")
+            .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("final-layout-preview")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -148,13 +127,103 @@ struct HomeScreenLayoutPreviewView: View {
             .onAppear {
                 selectedPage = pageIndices.first ?? 0
                 transitionProgress = 0
+                mode = .recommended
             }
         }
+    }
+
+    private var controlsCard: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Picker("Page", selection: $selectedPage) {
+                    ForEach(pageIndices, id: \.self) { page in
+                        Text("Page \(page + 1)").tag(page)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Spacer()
+
+                Toggle("Moved only", isOn: $showMovedOnly)
+                    .labelsHidden()
+                    .accessibilityIdentifier("preview-moved-only-toggle")
+                Text("Moved only")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Picker("Mode", selection: $mode) {
+                ForEach(PreviewMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var movedAppsCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Moved Apps")
+                .font(.headline)
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                ForEach(Array(movedNames.prefix(8)), id: \.self) { name in
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.left.and.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(name)
+                            .font(.subheadline)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Color(.tertiarySystemFill), in: Capsule())
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var transitionCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Transition")
+                    .font(.headline)
+                Spacer()
+                Button("Animate") {
+                    withAnimation(.easeInOut(duration: 0.7)) {
+                        transitionProgress = transitionProgress < 0.5 ? 1 : 0
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+
+            TransitionLayoutCanvas(
+                progress: transitionProgress,
+                current: beforeAssignments,
+                recommended: afterAssignments,
+                rows: rows,
+                columns: columns,
+                appName: model.displayName(for:),
+                iconData: model.previewIconData(for:)
+            )
+
+            Slider(value: $transitionProgress, in: 0...1)
+        }
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
 private struct PhoneLayoutCanvas: View {
     let title: String
+    let subtitle: String
     let assignments: [LayoutAssignment]
     let widgetLockedSlots: [Slot]
     let movedAppIDs: Set<UUID>
@@ -175,24 +244,28 @@ private struct PhoneLayoutCanvas: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(.headline)
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             GeometryReader { proxy in
                 let frame = CGRect(origin: .zero, size: proxy.size)
                 let cellWidth = frame.width / CGFloat(columns)
-                let cellHeight = frame.height / CGFloat(rows)
+                let cellHeight = (frame.height * 0.78) / CGFloat(rows)
+                let gridTop = frame.height * 0.08
                 let dockRect = CGRect(
                     x: frame.width * 0.08,
-                    y: frame.height * 0.85,
+                    y: frame.height * 0.84,
                     width: frame.width * 0.84,
-                    height: frame.height * 0.11
+                    height: frame.height * 0.12
                 )
                 let dockCellWidth = dockRect.width / CGFloat(columns)
 
                 ZStack {
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    RoundedRectangle(cornerRadius: 34, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [Color(.systemBackground), Color(.secondarySystemBackground)],
@@ -201,41 +274,20 @@ private struct PhoneLayoutCanvas: View {
                             )
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                .stroke(Color(.quaternaryLabel), lineWidth: 0.8)
+                            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                                .stroke(Color.black.opacity(0.08), lineWidth: 1)
                         )
-
-                    ForEach(gridAssignments, id: \.appID) { assignment in
-                        let x = (CGFloat(assignment.slot.column) + 0.5) * cellWidth
-                        let y = (CGFloat(assignment.slot.row) + 0.5) * cellHeight
-                        let moved = movedAppIDs.contains(assignment.appID)
-
-                        VStack(spacing: 2) {
-                            iconView(for: assignment.appID)
-                                .frame(width: min(28, cellWidth * 0.62), height: min(28, cellWidth * 0.62))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                        .stroke(moved ? Color.orange.opacity(0.9) : .clear, lineWidth: 1.4)
-                                )
-
-                            Text(appName(assignment.appID))
-                                .font(.system(size: 8, weight: .medium, design: .rounded))
-                                .lineLimit(1)
-                                .frame(width: max(cellWidth - 2, 26))
-                        }
-                        .position(x: x, y: y)
-                    }
 
                     ForEach(widgetLockedSlots, id: \.self) { slot in
                         let x = (CGFloat(slot.column) + 0.5) * cellWidth
-                        let y = (CGFloat(slot.row) + 0.5) * cellHeight
+                        let y = gridTop + (CGFloat(slot.row) + 0.5) * cellHeight
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color.gray.opacity(0.18))
+                            .fill(Color.gray.opacity(0.14))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .stroke(Color.gray.opacity(0.40), lineWidth: 1)
+                                    .stroke(Color.gray.opacity(0.34), lineWidth: 1)
                             )
-                            .frame(width: max(cellWidth - 8, 18), height: max(cellHeight - 10, 14))
+                            .frame(width: max(cellWidth - 10, 24), height: max(cellHeight - 10, 18))
                             .overlay(
                                 Image(systemName: "square.grid.2x2.fill")
                                     .font(.system(size: 10, weight: .semibold))
@@ -244,11 +296,33 @@ private struct PhoneLayoutCanvas: View {
                             .position(x: x, y: y)
                     }
 
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.white.opacity(0.24))
+                    ForEach(gridAssignments, id: \.appID) { assignment in
+                        let x = (CGFloat(assignment.slot.column) + 0.5) * cellWidth
+                        let y = gridTop + (CGFloat(assignment.slot.row) + 0.5) * cellHeight
+                        let moved = movedAppIDs.contains(assignment.appID)
+
+                        VStack(spacing: 2) {
+                            iconView(for: assignment.appID)
+                                .frame(width: min(34, cellWidth * 0.70), height: min(34, cellWidth * 0.70))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(moved ? Color.orange : .clear, lineWidth: 1.5)
+                                )
+
+                            Text(appName(assignment.appID))
+                                .font(.system(size: 9, weight: .medium, design: .rounded))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .frame(width: max(cellWidth - 4, 26))
+                        }
+                        .position(x: x, y: y)
+                    }
+
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.white.opacity(0.32))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color.white.opacity(0.42), lineWidth: 0.8)
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(Color.white.opacity(0.5), lineWidth: 0.8)
                         )
                         .frame(width: dockRect.width, height: dockRect.height)
                         .position(x: dockRect.midX, y: dockRect.midY)
@@ -258,22 +332,12 @@ private struct PhoneLayoutCanvas: View {
                         let assignment = dockAssignments.first(where: { $0.slot.column == column })
                         if let appID = assignment?.appID ?? fallbackAppID {
                             let moved = movedAppIDs.contains(appID)
-                            VStack(spacing: 2) {
-                                iconView(for: appID)
-                                    .frame(width: 24, height: 24)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                            .stroke(moved ? Color.orange.opacity(0.9) : .clear, lineWidth: 1.2)
-                                    )
-                            }
-                            .position(
-                                x: dockRect.minX + (CGFloat(column) + 0.5) * dockCellWidth,
-                                y: dockRect.midY
-                            )
-                        } else {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(Color.white.opacity(0.32), lineWidth: 0.8)
-                                .frame(width: 24, height: 24)
+                            iconView(for: appID)
+                                .frame(width: 28, height: 28)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .stroke(moved ? Color.orange : .clear, lineWidth: 1.4)
+                                )
                                 .position(
                                     x: dockRect.minX + (CGFloat(column) + 0.5) * dockCellWidth,
                                     y: dockRect.midY
@@ -282,11 +346,10 @@ private struct PhoneLayoutCanvas: View {
                     }
                 }
             }
-            .frame(height: 310)
+            .frame(height: 420)
         }
-        .padding(10)
-        .frame(maxWidth: .infinity)
-        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     @ViewBuilder
@@ -296,14 +359,14 @@ private struct PhoneLayoutCanvas: View {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         } else {
             Image(systemName: fallbackSymbol(for: appName(appID)))
                 .resizable()
                 .scaledToFit()
                 .padding(6)
                 .foregroundStyle(.secondary)
-                .background(Color(.quaternarySystemFill), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(Color(.quaternarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
 
@@ -355,7 +418,7 @@ private struct TransitionLayoutCanvas: View {
 
             ZStack {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color(.secondarySystemBackground))
+                    .fill(Color(.systemBackground))
 
                 ForEach(appIDs, id: \.self) { appID in
                     if let from = currentByID[appID] ?? recommendedByID[appID],
@@ -371,20 +434,14 @@ private struct TransitionLayoutCanvas: View {
                         let x = fromPoint.x + ((toPoint.x - fromPoint.x) * progress)
                         let y = fromPoint.y + ((toPoint.y - fromPoint.y) * progress)
 
-                        VStack(spacing: 2) {
-                            icon(appID: appID)
-                                .frame(width: min(24, cellWidth * 0.58), height: min(24, cellWidth * 0.58))
-                            Text(appName(appID))
-                                .font(.system(size: 7, weight: .medium, design: .rounded))
-                                .lineLimit(1)
-                                .frame(width: max(cellWidth - 4, 20))
-                        }
-                        .position(x: x, y: y)
+                        icon(appID: appID)
+                            .frame(width: min(28, cellWidth * 0.70), height: min(28, cellWidth * 0.70))
+                            .position(x: x, y: y)
                     }
                 }
             }
         }
-        .frame(height: 260)
+        .frame(height: 280)
     }
 
     @ViewBuilder
@@ -394,14 +451,14 @@ private struct TransitionLayoutCanvas: View {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         } else {
             Image(systemName: "app.fill")
                 .resizable()
                 .scaledToFit()
                 .padding(5)
                 .foregroundStyle(.secondary)
-                .background(Color(.quaternarySystemFill), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(Color(.quaternarySystemFill), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
     }
 }

@@ -517,24 +517,27 @@ struct RootView: View {
                 .autocorrectionDisabled()
                 .textFieldStyle(.roundedBorder)
 
-            HStack(spacing: 8) {
-                compactSetupPicker(title: "Context", icon: "calendar", selection: $model.context) {
-                    ForEach(ProfileContext.allCases, id: \.self) { value in
-                        Text(value.displayTitle).tag(value)
-                    }
+            compactSetupPicker(title: "Context", icon: "calendar", selection: $model.context) {
+                ForEach(ProfileContext.allCases, id: \.self) { value in
+                    Text(value.displayTitle).tag(value)
                 }
+            }
+            .accessibilityIdentifier("setup-context-picker")
 
+            HStack(spacing: 8) {
                 compactSetupPicker(title: "Hand", icon: "hand.point.up.left", selection: $model.handedness) {
                     ForEach(Handedness.allCases, id: \.self) { value in
                         Text(value.displayTitle).tag(value)
                     }
                 }
+                .accessibilityIdentifier("setup-hand-picker")
 
                 compactSetupPicker(title: "Grip", icon: "iphone", selection: $model.gripMode) {
                     ForEach(GripMode.allCases, id: \.self) { value in
                         Text(value.displayTitle).tag(value)
                     }
                 }
+                .accessibilityIdentifier("setup-grip-picker")
             }
 
             if model.context == .custom {
@@ -547,34 +550,21 @@ struct RootView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Intent")
                     .font(.subheadline.weight(.semibold))
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(minimum: 120), spacing: 8),
+                        GridItem(.flexible(minimum: 120), spacing: 8)
+                    ],
+                    spacing: 8
+                ) {
                     ForEach(OptimizationPreset.allCases) { preset in
-                            Button {
-                                applyPreset(preset)
-                            } label: {
-                                Label(preset.title, systemImage: preset.iconName)
-                                    .font(.subheadline.weight(.semibold))
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(selectedPreset == preset ? Tab.setup.accent.opacity(0.18) : Color(.tertiarySystemFill))
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .stroke(selectedPreset == preset ? Tab.setup.accent : .clear, lineWidth: 1.2)
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        stylePresetCard(preset)
+                            .accessibilityIdentifier("intent-card-\(preset.rawValue)")
                     }
                 }
-
             }
 
-            DisclosureGroup("More options", isExpanded: $showSetupAdvanced) {
+            DisclosureGroup("Advanced", isExpanded: $showSetupAdvanced) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(contextBehaviorHint(for: model.context))
                         .font(.caption2)
@@ -1353,6 +1343,8 @@ struct RootView: View {
             Label(title, systemImage: icon)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
 
             Picker(title, selection: selection) {
                 content()
@@ -1362,8 +1354,10 @@ struct RootView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
+            .frame(minHeight: 40)
             .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
+        .frame(minHeight: 66, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -1394,9 +1388,11 @@ struct RootView: View {
                 Text(preset.shortDescription)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 52, alignment: .topLeading)
             .padding(10)
             .background(
                 isSelected ? Tab.setup.accent.opacity(0.16) : Color(.tertiarySystemFill),
@@ -3705,6 +3701,12 @@ final class RootViewModel: ObservableObject {
                 columns: columns
             )
             let located = locatedCandidatesByPage[page.pageIndex] ?? []
+            let locatedAppLabelCount = Set(
+                located
+                    .filter(isLikelyLocatedAppLabelForInference)
+                    .map { canonicalAppName(normalizeDetectedAppName($0.text)) }
+                    .filter { !$0.isEmpty }
+            ).count
 
             for entry in occupancy {
                 let slot = entry.slot
@@ -3720,6 +3722,7 @@ final class RootViewModel: ObservableObject {
                 var inferredFromLabel = false
                 let topRowsLikelyWidgets = topRowsLikelyWidgetByPage[slot.page] ?? false
                 let isTopWidgetZone = slot.type == .app && slot.row <= 1 && topRowsLikelyWidgets
+                let conservativeAppInference = slot.type == .app && locatedAppLabelCount >= 5
 
                 if slot.type == .app,
                    let locatedHint = bestSlotLabelHint(
@@ -3751,6 +3754,10 @@ final class RootViewModel: ObservableObject {
                     continue
                 }
 
+                if conservativeAppInference, !inferredFromLabel {
+                    continue
+                }
+
                 if candidateName == nil, slot.type == .app {
                     let canUseIconClassifier = !isTopWidgetZone && (slot.row >= 2 || hasLabelEvidence || !topRowsLikelyWidgets)
                     if canUseIconClassifier {
@@ -3776,7 +3783,7 @@ final class RootViewModel: ObservableObject {
 
                 if candidateName == nil,
                    !usageSuggestions.isEmpty,
-                   (slot.type != .app || !isTopWidgetZone) {
+                   (slot.type != .app || (!isTopWidgetZone && !conservativeAppInference)) {
                     candidateName = usageSuggestions.removeFirst()
                 }
 
@@ -3785,6 +3792,9 @@ final class RootViewModel: ObservableObject {
                         continue
                     }
                     if isTopWidgetZone {
+                        continue
+                    }
+                    if conservativeAppInference {
                         continue
                     }
                     let lowConfidenceTopRow = slot.row <= 1 && entry.score < 0.48
@@ -4154,6 +4164,24 @@ final class RootViewModel: ObservableObject {
 
     private func locatedLabelID(_ candidate: LocatedOCRLabelCandidate) -> String {
         "\(canonicalAppName(candidate.text))::\(String(format: "%.3f", candidate.centerX))::\(String(format: "%.3f", candidate.centerY))"
+    }
+
+    private func isLikelyLocatedAppLabelForInference(_ candidate: LocatedOCRLabelCandidate) -> Bool {
+        let canonical = canonicalAppName(normalizeDetectedAppName(candidate.text))
+        guard !canonical.isEmpty else {
+            return false
+        }
+        if isLikelyWidgetNoiseName(canonical) {
+            return false
+        }
+        let yFromTop = 1.0 - min(max(candidate.centerY, 0), 1)
+        guard yFromTop >= appGridTopY - 0.02, yFromTop <= dockBottomY else {
+            return false
+        }
+        if candidate.boxWidth > 0.34 || candidate.boxHeight > 0.11 {
+            return false
+        }
+        return true
     }
 
     private func recognizeSlotLabelHint(
