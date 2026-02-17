@@ -329,7 +329,7 @@ struct RootView: View {
 
     private func stageScaffold<Content: View>(for tab: Tab, @ViewBuilder content: () -> Content) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 stageHeader(for: tab)
 
                 if shouldShowStatusBanner(on: tab) {
@@ -340,11 +340,11 @@ struct RootView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
 
                 Color.clear
-                    .frame(height: 76)
+                    .frame(height: 64)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 14)
         }
         .scrollIndicators(.hidden)
         .safeAreaInset(edge: .bottom) {
@@ -365,12 +365,12 @@ struct RootView: View {
     }
 
     private func stageHeader(for tab: Tab) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label("Step \(tabStepIndex(tab))/4", systemImage: tab.icon)
                     .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
                     .background(.white.opacity(0.16), in: Capsule())
 
                 Spacer()
@@ -378,24 +378,25 @@ struct RootView: View {
                 Text("\(Int((stageCompletion(for: tab) * 100).rounded()))%")
                     .font(.caption.weight(.semibold))
                     .monospacedDigit()
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
                     .background(.white.opacity(0.16), in: Capsule())
             }
 
             Text(tab.headline)
-                .font(.system(.title3, design: .rounded).weight(.bold))
+                .font(.system(.title3, design: .rounded).weight(.semibold))
 
             ProgressView(value: stageCompletion(for: tab))
                 .tint(.white)
 
-            if let blocker = stageShortHint(for: tab) {
+            if let blocker = stageShortHint(for: tab), isPrimaryActionDisabled(for: tab) {
                 Text(blocker)
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.85))
+                    .lineLimit(1)
             }
         }
-        .padding(15)
+        .padding(12)
         .background {
             ZStack {
                 LinearGradient(
@@ -406,21 +407,21 @@ struct RootView: View {
 
                 Circle()
                     .fill(.white.opacity(0.16))
-                    .frame(width: 120, height: 120)
-                    .offset(x: 120, y: -60)
+                    .frame(width: 96, height: 96)
+                    .offset(x: 108, y: -52)
 
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .fill(.white.opacity(0.06))
                     .rotationEffect(.degrees(-12))
                     .offset(x: -100, y: 26)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(.white.opacity(0.22), lineWidth: 1)
         )
-        .shadow(color: tab.accent.opacity(0.25), radius: 12, x: 0, y: 7)
+        .shadow(color: tab.accent.opacity(0.22), radius: 10, x: 0, y: 5)
     }
 
     private func reachableActionRail(for tab: Tab) -> some View {
@@ -512,19 +513,14 @@ struct RootView: View {
                 }
             }
 
-            TextField("Profile name", text: $model.profileName)
-                .textInputAutocapitalization(.words)
-                .autocorrectionDisabled()
-                .textFieldStyle(.roundedBorder)
-
-            compactSetupPicker(title: "Context", icon: "calendar", selection: $model.context) {
-                ForEach(ProfileContext.allCases, id: \.self) { value in
-                    Text(value.displayTitle).tag(value)
-                }
-            }
-            .accessibilityIdentifier("setup-context-picker")
-
             HStack(spacing: 8) {
+                compactSetupPicker(title: "Context", icon: "calendar", selection: $model.context) {
+                    ForEach(ProfileContext.allCases, id: \.self) { value in
+                        Text(value.displayTitle).tag(value)
+                    }
+                }
+                .accessibilityIdentifier("setup-context-picker")
+
                 compactSetupPicker(title: "Hand", icon: "hand.point.up.left", selection: $model.handedness) {
                     ForEach(Handedness.allCases, id: \.self) { value in
                         Text(value.displayTitle).tag(value)
@@ -538,13 +534,6 @@ struct RootView: View {
                     }
                 }
                 .accessibilityIdentifier("setup-grip-picker")
-            }
-
-            if model.context == .custom {
-                TextField("Custom context label", text: $model.customContextLabel)
-                    .textInputAutocapitalization(.words)
-                    .autocorrectionDisabled()
-                    .textFieldStyle(.roundedBorder)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -566,6 +555,18 @@ struct RootView: View {
 
             DisclosureGroup("Advanced", isExpanded: $showSetupAdvanced) {
                 VStack(alignment: .leading, spacing: 10) {
+                    TextField("Profile name (optional)", text: $model.profileName)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(.roundedBorder)
+
+                    if model.context == .custom {
+                        TextField("Custom context label", text: $model.customContextLabel)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                            .textFieldStyle(.roundedBorder)
+                    }
+
                     Text(contextBehaviorHint(for: model.context))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -1294,12 +1295,12 @@ struct RootView: View {
     }
 
     private func card<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.title3.weight(.bold))
             content()
         }
-        .padding(16)
+        .padding(12)
         .background(
             LinearGradient(
                 colors: [

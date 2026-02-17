@@ -30,6 +30,11 @@ final class GuidedFlowSmokeTests: XCTestCase {
         XCTAssertTrue(customOption.waitForExistence(timeout: 3))
         customOption.tap()
 
+        let advanced = app.buttons["Advanced"]
+        if advanced.exists {
+            advanced.tap()
+        }
+
         let customLabelField = app.textFields["Custom context label"]
         XCTAssertTrue(customLabelField.waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["Speed"].exists)
@@ -62,6 +67,8 @@ final class GuidedFlowSmokeTests: XCTestCase {
         XCTAssertTrue(reach.isHittable)
         XCTAssertTrue(visual.isHittable)
         XCTAssertTrue(stable.isHittable)
+        XCTAssertTrue(app.buttons["Save & Continue"].isHittable || app.buttons["Create & Continue"].isHittable)
+        XCTAssertTrue(app.buttons["bottom-primary-action"].isHittable)
     }
 
     func testEditMappingsOpensOverlayEditor() {
