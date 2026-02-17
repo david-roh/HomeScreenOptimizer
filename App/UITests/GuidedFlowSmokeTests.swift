@@ -49,6 +49,25 @@ final class GuidedFlowSmokeTests: XCTestCase {
         XCTAssertTrue(app.segmentedControls.buttons["Overlay"].exists)
     }
 
+    func testFineTuneSheetDismissesWithBackdropTap() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uitesting-unlock-tabs"]
+        app.launch()
+
+        let fineTune = app.buttons["Fine Tune"]
+        XCTAssertTrue(fineTune.waitForExistence(timeout: 6))
+        fineTune.tap()
+
+        let done = app.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 4))
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.10)).tap()
+
+        let dismissed = NSPredicate(format: "exists == false")
+        expectation(for: dismissed, evaluatedWith: done)
+        waitForExpectations(timeout: 4)
+    }
+
     func testPlanPreviewFinalLayoutOpensBeforeAfterPreview() {
         let app = XCUIApplication()
         app.launchArguments += ["-uitesting-unlock-tabs", "-uitesting-seed-flow"]

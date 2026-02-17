@@ -3640,6 +3640,7 @@ final class RootViewModel: ObservableObject {
         var inferredCount = 0
         var unlabeledCounter = 1
         var usedLocatedLabelIDs: Set<String> = []
+        let topRowsLikelyWidgetByPage = likelyTopRowsWidgetState(rows: rows, columns: columns)
 
         for page in pages.sorted(by: { $0.pageIndex < $1.pageIndex }) {
             guard let cgImage = pageImages[page.pageIndex] else {
@@ -3664,6 +3665,8 @@ final class RootViewModel: ObservableObject {
                 }
 
                 var candidateName: String?
+                var hasLabelEvidence = false
+                let topRowsLikelyWidgets = topRowsLikelyWidgetByPage[slot.page] ?? false
 
                 if slot.type == .app,
                    let locatedHint = bestSlotLabelHint(
@@ -3674,6 +3677,7 @@ final class RootViewModel: ObservableObject {
                        usedLabelIDs: &usedLocatedLabelIDs
                    ) {
                     candidateName = locatedHint
+                    hasLabelEvidence = true
                 }
 
                 if candidateName == nil, slot.type == .app {
@@ -3683,15 +3687,23 @@ final class RootViewModel: ObservableObject {
                         rows: rows,
                         columns: columns
                     )
+                    if candidateName != nil {
+                        hasLabelEvidence = true
+                    }
                 }
 
                 if candidateName == nil, slot.type == .app {
-                    candidateName = classifyAppIconHint(
-                        for: slot,
-                        in: cgImage,
-                        rows: rows,
-                        columns: columns
-                    )
+                    let canUseIconClassifier = slot.row >= 2 || hasLabelEvidence || !topRowsLikelyWidgets
+                    if canUseIconClassifier {
+                        let minimumConfidence = slot.row <= 1 ? 0.34 : 0.18
+                        candidateName = classifyAppIconHint(
+                            for: slot,
+                            in: cgImage,
+                            rows: rows,
+                            columns: columns,
+                            minimumConfidence: minimumConfidence
+                        )
+                    }
                 }
 
                 if candidateName == nil, slot.type == .dock {
@@ -3703,7 +3715,9 @@ final class RootViewModel: ObservableObject {
                     )
                 }
 
-                if candidateName == nil, !usageSuggestions.isEmpty {
+                if candidateName == nil,
+                   !usageSuggestions.isEmpty,
+                   (slot.type != .app || slot.row >= 2 || !topRowsLikelyWidgets) {
                     candidateName = usageSuggestions.removeFirst()
                 }
 
@@ -3914,6 +3928,21 @@ final class RootViewModel: ObservableObject {
             "weather", "calendar widget", "batteries", "screen time", "reminders due", "event"
         ]
         return fragments.contains(where: { key.contains($0) })
+    }
+
+    private func likelyTopRowsWidgetState(rows: Int, columns: Int) -> [Int: Bool] {
+        guard rows > 1, columns > 0 else {
+            return [:]
+        }
+
+        var slotsByPage: [Int: Set<String>] = [:]
+        for slot in widgetLockedSlots where slot.row <= 1 {
+            let key = "\(slot.row)-\(slot.column)"
+            slotsByPage[slot.page, default: []].insert(key)
+        }
+
+        let threshold = max(2, columns)
+        return slotsByPage.mapValues { $0.count >= threshold }
     }
 
     private func detectLikelyWidgetLocks(
@@ -4160,7 +4189,8 @@ final class RootViewModel: ObservableObject {
         for slot: Slot,
         in image: CGImage,
         rows: Int,
-        columns: Int
+        columns: Int,
+        minimumConfidence: Double = 0.18
     ) -> String? {
 #if canImport(Vision)
         guard slot.type == .app,
@@ -4181,19 +4211,20 @@ final class RootViewModel: ObservableObject {
             return nil
         }
 
-        return classifyIconHint(from: crop, minimumConfidence: 0.18)
+        return classifyIconHint(from: crop, minimumConfidence: minimumConfidence)
 #else
         _ = slot
         _ = image
         _ = rows
         _ = columns
+        _ = minimumConfidence
         return nil
 #endif
     }
 
     private func classifyIconHint(
         from crop: CGImage,
-        minimumConfidence: VNConfidence
+        minimumConfidence: Double
     ) -> String? {
 #if canImport(Vision)
         let request = VNClassifyImageRequest()
@@ -4239,7 +4270,7 @@ final class RootViewModel: ObservableObject {
 
         for result in request.results?.prefix(12) ?? [] {
             let key = result.identifier.lowercased()
-            guard result.confidence >= minimumConfidence else {
+            guard result.confidence >= VNConfidence(minimumConfidence) else {
                 continue
             }
             if let match = mapping.first(where: { key.contains($0.needle) }) {
