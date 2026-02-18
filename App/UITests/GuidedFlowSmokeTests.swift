@@ -11,7 +11,19 @@ final class GuidedFlowSmokeTests: XCTestCase {
         app.launchArguments += ["-uitesting-unlock-tabs"]
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["Intent"].waitForExistence(timeout: 8))
+        let contextPicker = app.buttons["setup-context-picker"]
+        XCTAssertTrue(contextPicker.waitForExistence(timeout: 5))
+        contextPicker.tap()
+
+        let customOption = app.buttons["Custom"]
+        XCTAssertTrue(customOption.waitForExistence(timeout: 3))
+        customOption.tap()
+
+        let next = app.buttons["setup-step-next"]
+        XCTAssertTrue(next.waitForExistence(timeout: 3))
+        next.tap()
+
+        XCTAssertTrue(app.buttons["intent-card-balanced"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["Balanced"].exists)
         XCTAssertTrue(app.staticTexts["Reach"].exists)
         XCTAssertTrue(app.staticTexts["Visual"].exists)
@@ -22,31 +34,9 @@ final class GuidedFlowSmokeTests: XCTestCase {
             visualIntent.tap()
         }
 
-        let contextPicker = app.buttons["Context, Workday"]
-        XCTAssertTrue(contextPicker.waitForExistence(timeout: 3))
-        contextPicker.tap()
-
-        let customOption = app.buttons["Custom"]
-        XCTAssertTrue(customOption.waitForExistence(timeout: 3))
-        customOption.tap()
-
-        let advanced = app.buttons["Advanced"]
-        if advanced.exists {
-            advanced.tap()
-        }
-
-        let customLabelField = app.textFields["Custom context label"]
-        var foundCustomLabel = customLabelField.waitForExistence(timeout: 2)
-        if !foundCustomLabel {
-            for _ in 0..<3 where !foundCustomLabel {
-                app.swipeUp()
-                if app.buttons["Advanced"].exists {
-                    app.buttons["Advanced"].tap()
-                }
-                foundCustomLabel = customLabelField.exists
-            }
-        }
-        XCTAssertTrue(foundCustomLabel)
+        XCTAssertTrue(next.waitForExistence(timeout: 2))
+        next.tap()
+        XCTAssertTrue(app.textFields["Custom context label"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["Speed"].exists)
     }
 
@@ -63,6 +53,10 @@ final class GuidedFlowSmokeTests: XCTestCase {
         XCTAssertTrue(hand.exists)
         XCTAssertTrue(grip.exists)
 
+        let next = app.buttons["setup-step-next"]
+        XCTAssertTrue(next.waitForExistence(timeout: 3))
+        next.tap()
+
         let balanced = app.buttons["intent-card-balanced"]
         let reach = app.buttons["intent-card-reachFirst"]
         let visual = app.buttons["intent-card-visualHarmony"]
@@ -77,6 +71,7 @@ final class GuidedFlowSmokeTests: XCTestCase {
         XCTAssertTrue(reach.isHittable)
         XCTAssertTrue(visual.isHittable)
         XCTAssertTrue(stable.isHittable)
+        next.tap()
         XCTAssertTrue(app.buttons["Save & Continue"].isHittable || app.buttons["Create & Continue"].isHittable)
         XCTAssertTrue(app.buttons["bottom-primary-action"].isHittable)
     }
@@ -104,7 +99,12 @@ final class GuidedFlowSmokeTests: XCTestCase {
         app.launch()
 
         let fineTune = app.buttons["open-fine-tune"]
-        XCTAssertTrue(fineTune.waitForExistence(timeout: 6))
+        let next = app.buttons["setup-step-next"]
+        XCTAssertTrue(next.waitForExistence(timeout: 6))
+        next.tap()
+        XCTAssertTrue(next.waitForExistence(timeout: 3))
+        next.tap()
+        XCTAssertTrue(fineTune.waitForExistence(timeout: 3))
         XCTAssertTrue(fineTune.isHittable)
     }
 

@@ -83,6 +83,7 @@ struct RootView: View {
     @State private var selectedTab: Tab = .setup
     @State private var selectedPreset: OptimizationPreset = .balanced
     @State private var selectedVisualPattern: VisualPatternMode = .colorBands
+    @State private var setupStep: SetupStep = .ergonomics
     @State private var ignoreContextBaselineOnce = false
     @State private var showSetupAdvanced = false
     @State private var activeSheet: ActiveSheet?
@@ -176,6 +177,25 @@ struct RootView: View {
                 return "Weights"
             case .calibration:
                 return "Calibration"
+            }
+        }
+    }
+
+    private enum SetupStep: Int, CaseIterable, Identifiable {
+        case ergonomics
+        case intent
+        case finalize
+
+        var id: Int { rawValue }
+
+        var title: String {
+            switch self {
+            case .ergonomics:
+                return "How You Hold"
+            case .intent:
+                return "What To Optimize"
+            case .finalize:
+                return "Finalize"
             }
         }
     }
@@ -338,8 +358,6 @@ struct RootView: View {
             ScrollView {
                 maybeGlassContainer {
                     VStack(alignment: .leading, spacing: 10) {
-                        Spacer(minLength: 0)
-
                         if shouldShowStatusBanner(on: tab) {
                             statusBanner
                         }
@@ -350,11 +368,11 @@ struct RootView: View {
                         Color.clear
                             .frame(height: 8)
                     }
-                    .frame(minHeight: max(0, proxy.size.height - railReservedHeight), alignment: .bottom)
+                    .frame(minHeight: max(0, proxy.size.height - railReservedHeight - 12), alignment: .bottom)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
-                .padding(.bottom, railReservedHeight)
+                .padding(.bottom, 14)
             }
             .scrollIndicators(.hidden)
             .safeAreaInset(edge: .bottom) {
@@ -455,64 +473,91 @@ struct RootView: View {
 
     private var setupCard: some View {
         card(title: "Grip Profile") {
-            if !model.savedProfiles.isEmpty {
-                Menu {
-                    ForEach(model.savedProfiles) { profile in
-                        Button {
-                            model.selectedProfileID = profile.id
-                            ignoreContextBaselineOnce = true
-                            model.loadSelectedProfileIntoEditor()
-                            syncPresetFromModelWeights()
-                        } label: {
-                            Text(ProfileNameResolver.middleTruncated(profile.name, maxCharacters: 34))
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "person.crop.circle")
-                            .foregroundStyle(.secondary)
-                        Text(model.activeProfileName.map { ProfileNameResolver.middleTruncated($0, maxCharacters: 34) } ?? "Select profile")
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 9)
-                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-            }
-
-            VStack(spacing: 8) {
-                compactSetupPicker(title: "Context", icon: "calendar", selection: $model.context) {
-                    ForEach(ProfileContext.allCases, id: \.self) { value in
-                        Text(value.displayTitle).tag(value)
-                    }
-                }
-                .accessibilityIdentifier("setup-context-picker")
-
-                HStack(spacing: 8) {
-                    compactSetupPicker(title: "Hand", icon: "hand.point.up.left", selection: $model.handedness) {
-                        ForEach(Handedness.allCases, id: \.self) { value in
-                            Text(value.displayTitle).tag(value)
-                        }
-                    }
-                    .accessibilityIdentifier("setup-hand-picker")
-
-                    compactSetupPicker(title: "Grip", icon: "iphone", selection: $model.gripMode) {
-                        ForEach(GripMode.allCases, id: \.self) { value in
-                            Text(value.displayTitle).tag(value)
-                        }
-                    }
-                    .accessibilityIdentifier("setup-grip-picker")
-                }
-            }
-
             VStack(alignment: .leading, spacing: 8) {
-                Text("Intent")
-                    .font(.subheadline.weight(.semibold))
+                HStack {
+                    Text(setupStep.title)
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("Step \(setupStep.rawValue + 1)/3")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 6) {
+                    ForEach(SetupStep.allCases) { step in
+                        Capsule()
+                            .fill(step.rawValue <= setupStep.rawValue ? Tab.setup.accent : Color(.quaternarySystemFill))
+                            .frame(height: 4)
+                    }
+                }
+            }
+
+            switch setupStep {
+            case .ergonomics:
+                if !model.savedProfiles.isEmpty {
+                    Menu {
+                        ForEach(model.savedProfiles) { profile in
+                            Button {
+                                model.selectedProfileID = profile.id
+                                ignoreContextBaselineOnce = true
+                                model.loadSelectedProfileIntoEditor()
+                                syncPresetFromModelWeights()
+                            } label: {
+                                Text(ProfileNameResolver.middleTruncated(profile.name, maxCharacters: 34))
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.crop.circle")
+                                .foregroundStyle(.secondary)
+                            Text(model.activeProfileName.map { ProfileNameResolver.middleTruncated($0, maxCharacters: 34) } ?? "Select profile")
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 9)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                }
+
+                VStack(spacing: 8) {
+                    compactSetupPicker(title: "Context", icon: "calendar", selection: $model.context) {
+                        ForEach(ProfileContext.allCases, id: \.self) { value in
+                            Text(value.displayTitle).tag(value)
+                        }
+                    }
+                    .accessibilityIdentifier("setup-context-picker")
+
+                    HStack(spacing: 8) {
+                        compactSetupPicker(title: "Hand", icon: "hand.point.up.left", selection: $model.handedness) {
+                            ForEach(Handedness.allCases, id: \.self) { value in
+                                Text(value.displayTitle).tag(value)
+                            }
+                        }
+                        .accessibilityIdentifier("setup-hand-picker")
+
+                        compactSetupPicker(title: "Grip", icon: "iphone", selection: $model.gripMode) {
+                            ForEach(GripMode.allCases, id: \.self) { value in
+                                Text(value.displayTitle).tag(value)
+                            }
+                        }
+                        .accessibilityIdentifier("setup-grip-picker")
+                    }
+                }
+
+                Text(contextBehaviorHint(for: model.context))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+            case .intent:
+                Text("Pick one optimization intent.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 LazyVGrid(
                     columns: [
                         GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 8),
@@ -525,84 +570,40 @@ struct RootView: View {
                             .accessibilityIdentifier("intent-card-\(preset.rawValue)")
                     }
                 }
-            }
 
-            DisclosureGroup("Advanced", isExpanded: $showSetupAdvanced) {
-                VStack(alignment: .leading, spacing: 10) {
-                    TextField("Profile name (optional)", text: $model.profileName)
+                if selectedPreset == .visualHarmony {
+                    pickerRow(title: "Visual Pattern", icon: "paintpalette", selection: $selectedVisualPattern) {
+                        ForEach(VisualPatternMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    Text(selectedVisualPattern.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button {
+                    activeSheet = .styleDetails
+                } label: {
+                    Label("How \(selectedPreset.title) works", systemImage: "info.circle")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Tab.setup.accent)
+
+            case .finalize:
+                TextField("Profile name (optional)", text: $model.profileName)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled()
+                    .textFieldStyle(.roundedBorder)
+
+                if model.context == .custom {
+                    TextField("Custom context label", text: $model.customContextLabel)
                         .textInputAutocapitalization(.words)
                         .autocorrectionDisabled()
                         .textFieldStyle(.roundedBorder)
-
-                    if model.context == .custom {
-                        TextField("Custom context label", text: $model.customContextLabel)
-                            .textInputAutocapitalization(.words)
-                            .autocorrectionDisabled()
-                            .textFieldStyle(.roundedBorder)
-                    }
-
-                    Text(contextBehaviorHint(for: model.context))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-
-                    if selectedPreset == .visualHarmony {
-                        pickerRow(title: "Visual Pattern", icon: "paintpalette", selection: $selectedVisualPattern) {
-                            ForEach(VisualPatternMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
-                        }
-
-                        Text(selectedVisualPattern.detail)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if !model.dockPinCandidates.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Dock Policy")
-                                .font(.subheadline.weight(.semibold))
-
-                            Toggle("Keep current Dock apps sticky", isOn: $model.keepCurrentDockApps)
-                                .tint(Tab.setup.accent)
-                            Toggle("Prioritize essential apps (Phone, Messages, Maps)", isOn: $model.prioritizeEssentialDockApps)
-                                .tint(Tab.setup.accent)
-
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    ForEach(model.dockPinCandidates, id: \.self) { appName in
-                                        let pinned = model.isDockPinned(appName)
-                                        Button {
-                                            model.toggleDockPin(appName)
-                                        } label: {
-                                            Label(appName, systemImage: pinned ? "pin.fill" : "pin")
-                                                .font(.caption.weight(.semibold))
-                                                .lineLimit(1)
-                                                .padding(.horizontal, 10)
-                                                .padding(.vertical, 7)
-                                                .background(
-                                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                        .fill(pinned ? Tab.setup.accent.opacity(0.20) : Color(.tertiarySystemFill))
-                                                )
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Button {
-                        activeSheet = .styleDetails
-                    } label: {
-                        Label("How \(selectedPreset.title) works", systemImage: "info.circle")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Tab.setup.accent)
                 }
-            }
 
-            HStack {
                 Button("Fine Tune") {
                     fineTuneMode = .weights
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -612,14 +613,45 @@ struct RootView: View {
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("open-fine-tune")
 
+                DisclosureGroup("More options", isExpanded: $showSetupAdvanced) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if !model.dockPinCandidates.isEmpty {
+                            Toggle("Keep current Dock apps sticky", isOn: $model.keepCurrentDockApps)
+                                .tint(Tab.setup.accent)
+                            Toggle("Prioritize essential apps", isOn: $model.prioritizeEssentialDockApps)
+                                .tint(Tab.setup.accent)
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+            }
+
+            HStack {
+                if setupStep != .ergonomics {
+                    Button("Back") {
+                        retreatSetupStep()
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("setup-step-back")
+                }
+
                 Spacer()
 
-                Button(hasSavedProfile ? "Save & Continue" : "Create & Continue") {
-                    saveProfileAndContinue()
+                if setupStep == .finalize {
+                    Button(hasSavedProfile ? "Save & Continue" : "Create & Continue") {
+                        saveProfileAndContinue()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Tab.setup.accent)
+                    .disabled(!model.canSubmitProfile)
+                } else {
+                    Button("Next") {
+                        advanceSetupStep()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Tab.setup.accent)
+                    .accessibilityIdentifier("setup-step-next")
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Tab.setup.accent)
-                .disabled(!model.canSubmitProfile)
             }
         }
     }
@@ -1608,11 +1640,30 @@ struct RootView: View {
     private func saveProfileAndContinue() {
         model.saveProfile()
         showSetupAdvanced = false
+        setupStep = .ergonomics
         if canOpenImport {
             withAnimation(.easeInOut(duration: 0.2)) {
                 selectedTab = .importData
             }
             model.presentStatus("Profile saved.", level: .success)
+        }
+    }
+
+    private func advanceSetupStep() {
+        guard let next = SetupStep(rawValue: setupStep.rawValue + 1) else {
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            setupStep = next
+        }
+    }
+
+    private func retreatSetupStep() {
+        guard let previous = SetupStep(rawValue: setupStep.rawValue - 1) else {
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            setupStep = previous
         }
     }
 
