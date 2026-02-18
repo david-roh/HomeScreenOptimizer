@@ -332,7 +332,9 @@ struct RootView: View {
     }
 
     private func stageScaffold<Content: View>(for tab: Tab, @ViewBuilder content: @escaping () -> Content) -> some View {
-        GeometryReader { proxy in
+        let railReservedHeight: CGFloat = 118
+
+        return GeometryReader { proxy in
             ScrollView {
                 maybeGlassContainer {
                     VStack(alignment: .leading, spacing: 10) {
@@ -348,11 +350,11 @@ struct RootView: View {
                         Color.clear
                             .frame(height: 8)
                     }
-                    .frame(minHeight: proxy.size.height - 24, alignment: .bottom)
+                    .frame(minHeight: max(0, proxy.size.height - railReservedHeight), alignment: .bottom)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
-                .padding(.bottom, 14)
+                .padding(.bottom, railReservedHeight)
             }
             .scrollIndicators(.hidden)
             .safeAreaInset(edge: .bottom) {
