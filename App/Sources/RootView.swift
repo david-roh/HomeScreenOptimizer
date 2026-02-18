@@ -331,28 +331,33 @@ struct RootView: View {
         )
     }
 
-    private func stageScaffold<Content: View>(for tab: Tab, @ViewBuilder content: () -> Content) -> some View {
-        ScrollView {
-            maybeGlassContainer {
-                VStack(alignment: .leading, spacing: 10) {
-                    if shouldShowStatusBanner(on: tab) {
-                        statusBanner
+    private func stageScaffold<Content: View>(for tab: Tab, @ViewBuilder content: @escaping () -> Content) -> some View {
+        GeometryReader { proxy in
+            ScrollView {
+                maybeGlassContainer {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Spacer(minLength: 0)
+
+                        if shouldShowStatusBanner(on: tab) {
+                            statusBanner
+                        }
+
+                        content()
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+
+                        Color.clear
+                            .frame(height: 8)
                     }
-
-                    content()
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-
-                    Color.clear
-                        .frame(height: 8)
+                    .frame(minHeight: proxy.size.height - 24, alignment: .bottom)
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 14)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 14)
-        }
-        .scrollIndicators(.hidden)
-        .safeAreaInset(edge: .bottom) {
-            reachableActionRail(for: tab)
+            .scrollIndicators(.hidden)
+            .safeAreaInset(edge: .bottom) {
+                reachableActionRail(for: tab)
+            }
         }
     }
 

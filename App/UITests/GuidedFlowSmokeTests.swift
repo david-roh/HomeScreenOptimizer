@@ -105,8 +105,7 @@ final class GuidedFlowSmokeTests: XCTestCase {
 
         let fineTune = app.buttons["open-fine-tune"]
         XCTAssertTrue(fineTune.waitForExistence(timeout: 6))
-        fineTune.tap()
-        XCTAssertTrue(app.buttons["open-fine-tune"].exists)
+        XCTAssertTrue(fineTune.isHittable)
     }
 
     func testPlanPreviewFinalLayoutOpensBeforeAfterPreview() {
