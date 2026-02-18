@@ -1332,46 +1332,28 @@ struct RootView: View {
 
     @ViewBuilder
     private func maybeGlassContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        if #available(iOS 26, *) {
-            GlassEffectContainer(spacing: 10) {
-                content()
-            }
-        } else {
-            content()
-        }
+        content()
     }
 
     @ViewBuilder
     private func stageSurface(accent: Color, cornerRadius: CGFloat) -> some View {
-        if #available(iOS 26, *) {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.white.opacity(0.01))
-                .glassEffect(.regular.tint(accent.opacity(0.14)), in: .rect(cornerRadius: cornerRadius))
-        } else {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.78),
-                            accent.opacity(0.10)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color(.secondarySystemBackground),
+                        accent.opacity(0.12)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
-        }
+            )
     }
 
     @ViewBuilder
     private func actionRailSurface(cornerRadius: CGFloat) -> some View {
-        if #available(iOS 26, *) {
-            Rectangle()
-                .fill(Color.white.opacity(0.01))
-                .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-        } else {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-        }
+        Rectangle()
+            .fill(.ultraThinMaterial)
     }
 
     private func pickerRow<Selection: Hashable, Content: View>(
