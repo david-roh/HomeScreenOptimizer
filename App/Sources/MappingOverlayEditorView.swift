@@ -233,6 +233,9 @@ struct MappingOverlayEditorView: View {
     private var reviewIndicesOnSelectedPage: [Int] {
         indicesOnSelectedPage.filter { index in
             let detected = model.detectedSlots[index]
+            if isLikelyWidgetNoiseCandidate(detected) {
+                return false
+            }
             let name = detected.appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return detected.confidence < 0.72
                 || name.hasPrefix("unlabeled")
@@ -247,7 +250,16 @@ struct MappingOverlayEditorView: View {
         } else {
             source = reviewIndicesOnSelectedPage.isEmpty ? indicesOnSelectedPage : reviewIndicesOnSelectedPage
         }
-        return dedupedIndicesBySlot(source)
+        let cleaned = source.filter { index in
+            guard model.detectedSlots.indices.contains(index) else {
+                return false
+            }
+            if widgetLockMode {
+                return true
+            }
+            return !isLikelyWidgetNoiseCandidate(model.detectedSlots[index])
+        }
+        return dedupedIndicesBySlot(cleaned)
     }
 
     private var widgetSlotsOnSelectedPage: [Slot] {
@@ -862,5 +874,40 @@ struct MappingOverlayEditorView: View {
             return candidate.confidence > current.confidence
         }
         return candidate.appName.count > current.appName.count
+    }
+
+    private func isLikelyWidgetNoiseCandidate(_ detected: DetectedAppSlot) -> Bool {
+        guard detected.slot.type == .app else {
+            return false
+        }
+
+        if model.isWidgetLocked(detected.slot) {
+            return true
+        }
+
+        let topWidgetSignal = widgetSlotsOnSelectedPage.contains { $0.row <= 1 }
+        if topWidgetSignal && detected.slot.row <= 1 {
+            return true
+        }
+        if topWidgetSignal && detected.slot.row <= 2 && detected.confidence < 0.5 {
+            return true
+        }
+
+        let canonical = detected.appName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let noiseNames: Set<String> = [
+            "sun", "mon", "tue", "wed", "thu", "fri", "sat",
+            "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+            "today", "tomorrow", "search", "widget"
+        ]
+        if noiseNames.contains(canonical) {
+            return true
+        }
+        if canonical.range(of: #"^\d{1,2}$"#, options: .regularExpression) != nil {
+            return true
+        }
+
+        return false
     }
 }

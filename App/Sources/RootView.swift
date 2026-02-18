@@ -335,8 +335,6 @@ struct RootView: View {
         ScrollView {
             maybeGlassContainer {
                 VStack(alignment: .leading, spacing: 10) {
-                    stageHeader(for: tab)
-
                     if shouldShowStatusBanner(on: tab) {
                         statusBanner
                     }
@@ -370,73 +368,6 @@ struct RootView: View {
         return true
     }
 
-    private func stageHeader(for tab: Tab) -> some View {
-        let voice = stageVoice(for: tab)
-
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Label(voice.badge, systemImage: voice.icon)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Label("Step \(tabStepIndex(tab))/4", systemImage: tab.icon)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(tab.accent)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(tab.accent.opacity(0.14), in: Capsule())
-                Text("\(Int((stageCompletion(for: tab) * 100).rounded()))%")
-                    .font(.caption.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-
-            Text(tab.headline)
-                .font(.headline.weight(.semibold))
-                .lineLimit(1)
-
-            ProgressView(value: stageCompletion(for: tab))
-                .tint(tab.accent)
-                .scaleEffect(x: 1, y: 0.9, anchor: .center)
-
-            if let blocker = stageShortHint(for: tab), isPrimaryActionDisabled(for: tab) {
-                Label(blocker, systemImage: "exclamationmark.circle")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Label("Next: \(primaryActionLabel(for: tab))", systemImage: "arrow.right.circle.fill")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(tab.accent)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 8)
-        .background(stageSurface(accent: tab.accent, cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(tab.accent.opacity(0.24), lineWidth: 1)
-        )
-    }
-
-    private func stageVoice(for tab: Tab) -> (badge: String, icon: String, prompt: String) {
-        switch tab {
-        case .setup:
-            return ("Flow Coach", "sparkles", "Tell me how you hold your phone so every recommendation matches your real reach.")
-        case .importData:
-            return ("Spatial Capture", "viewfinder", "Add a clean screenshot and verify quick mappings before planning.")
-        case .plan:
-            return ("Decision Engine", "brain.head.profile", "Blend usage + reachability + style into a practical rearrangement plan.")
-        case .apply:
-            return ("Action Checklist", "checkmark.seal", "Apply one move at a time with confidence, and stop when it already feels right.")
-        }
-    }
-
     private func reachableActionRail(for tab: Tab) -> some View {
         let actionButton = Button {
             advanceFrom(stage: tab)
@@ -455,12 +386,35 @@ struct RootView: View {
         .disabled(isPrimaryActionDisabled(for: tab))
         .accessibilityIdentifier("bottom-primary-action")
 
-        return VStack(spacing: 8) {
+        return VStack(spacing: 7) {
+            HStack(spacing: 10) {
+                Label("Step \(tabStepIndex(tab))/4", systemImage: tab.icon)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(tab.accent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(tab.accent.opacity(0.14), in: Capsule())
+
+                Text(tab.headline)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                Text("\(Int((stageCompletion(for: tab) * 100).rounded()))%")
+                    .font(.caption2.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+
+            ProgressView(value: stageCompletion(for: tab))
+                .tint(tab.accent)
+
             if let hint = stageShortHint(for: tab), isPrimaryActionDisabled(for: tab) {
                 Text(hint)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -3896,13 +3850,18 @@ final class RootViewModel: ObservableObject {
             if detected.slot.row <= 1, topWidgetSignalByPage[detected.slot.page] == true {
                 return true
             }
+            if detected.slot.row <= 2,
+               topWidgetSignalByPage[detected.slot.page] == true,
+               detected.confidence < 0.48 {
+                return true
+            }
             if isLikelyWidgetNoiseName(canonical) {
                 return true
             }
-            if lowerGridNames.contains(canonical), detected.slot.row <= 1 {
+            if lowerGridNames.contains(canonical), detected.slot.row <= 2 {
                 return true
             }
-            if detected.slot.row <= 1,
+            if detected.slot.row <= 2,
                let matched = appNameMatcher.bestMatch(for: canonical, against: lowerGridNameList, minimumScore: 0.86),
                canonical != matched {
                 return true
@@ -3920,10 +3879,16 @@ final class RootViewModel: ObservableObject {
             guard !canonical.isEmpty else {
                 continue
             }
-            if let clusterKey = bestCanonicalClusterKey(for: canonical, in: grouped.keys) {
-                grouped[clusterKey, default: []].append(index)
+            let detected = detectedSlots[index]
+            let groupPrefix = "\(detected.slot.page)-\(detected.slot.type.rawValue)-"
+            let scopedKeys = grouped.keys
+                .filter { $0.hasPrefix(groupPrefix) }
+                .map { String($0.dropFirst(groupPrefix.count)) }
+            if let clusterCanonical = bestCanonicalClusterKey(for: canonical, in: scopedKeys) {
+                let scopedClusterKey = groupPrefix + clusterCanonical
+                grouped[scopedClusterKey, default: []].append(index)
             } else {
-                grouped[canonical, default: []].append(index)
+                grouped[groupPrefix + canonical, default: []].append(index)
             }
         }
 
@@ -3965,7 +3930,7 @@ final class RootViewModel: ObservableObject {
 
     private func bestCanonicalClusterKey(
         for canonical: String,
-        in keys: Dictionary<String, [Int]>.Keys
+        in keys: [String]
     ) -> String? {
         var bestKey: String?
         var bestScore = 0.0
